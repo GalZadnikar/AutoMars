@@ -24,10 +24,17 @@ public class PlayerInteractions : MonoBehaviour
 
     void Update()
     {
-        if (UIState.ModalOpen) { HideAll(); return; }
+        if (UIState.ModalOpen || UIState.BuildMode) { HideAll(); return; }
 
-        var f = BotFactory.Instance;
-        if (f != null && !f.InRange(transform.position)) f = null;
+        // nearest factory whose zone we're standing in (there can be several)
+        BotFactory f = null;
+        float fd = float.MaxValue;
+        foreach (var bf in BotFactory.All)
+        {
+            if (!bf.InRange(transform.position)) continue;
+            float d = (bf.transform.position - transform.position).sqrMagnitude;
+            if (d < fd) { fd = d; f = bf; }
+        }
         if (f != shownFactory)
         {
             if (shownFactory != null) shownFactory.SetHighlight(false);

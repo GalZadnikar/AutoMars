@@ -25,6 +25,9 @@ public class LowPolyGround : MonoBehaviour
 
     Mesh mesh;
 
+    /// Fired after the mesh is (re)generated, so leveled building pads can be re-applied.
+    public static event System.Action Rebuilt;
+
     void OnEnable() => Build();
 
 #if UNITY_EDITOR
@@ -110,5 +113,6 @@ public class LowPolyGround : MonoBehaviour
             if (col == null) col = gameObject.AddComponent<MeshCollider>();
             col.sharedMesh = null; col.sharedMesh = mesh;
         }
+        Rebuilt?.Invoke();
     }
 }

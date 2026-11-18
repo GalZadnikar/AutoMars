@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 50f55be80848f4c5daaf8391d2fb474f, type: 3}
+  m_Name: Build_ChargingStation
+  m_EditorClassIdentifier: Assembly-CSharp::BuildingDef
+  displayName: Charging Station
+  description: 2 more charging pads
+  cost: 40
+  buildTime: 5
+  prefab: {fileID: 5023477997065148573, guid: 2614be67de4c041f99e21c7e681d5f92, type: 3}
+  color: {r: 0.43529412, g: 0.827451, b: 0.93333334, a: 1}
+  glyph: C

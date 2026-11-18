@@ -31,7 +31,7 @@ public class JoystickPlayerController : MonoBehaviour
 
     Vector2 ReadInput()
     {
-        if (UIState.ModalOpen) return Vector2.zero;   // popup open: don't move
+        if (UIState.ModalOpen || UIState.BuildMode) return Vector2.zero;   // popup open / build mode (joystick moves the blueprint): don't move
         Vector2 input = joystick != null ? joystick.Direction : Vector2.zero;
 #if ENABLE_INPUT_SYSTEM
         var kb = Keyboard.current;

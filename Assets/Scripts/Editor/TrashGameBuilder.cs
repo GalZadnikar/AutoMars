@@ -84,6 +84,7 @@ public static class TrashGameBuilder
         var f = new GameObject("Bot Factory");
         f.transform.position = OnGround(15f, -9f);
         var bf = f.AddComponent<BotFactory>();
+        f.AddComponent<GridFootprint>().size = new Vector2Int(4, 4);   // build grid
 
         var body = new GameObject("Body").transform;
         body.SetParent(f.transform, false);

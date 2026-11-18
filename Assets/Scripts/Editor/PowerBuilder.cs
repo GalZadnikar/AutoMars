@@ -101,6 +101,9 @@ public static class PowerBuilder
         var root = new GameObject("Charging Station");
         root.transform.SetPositionAndRotation(pos, rot);
         var st = root.AddComponent<ChargingStation>();
+        var fp = root.AddComponent<GridFootprint>();   // build grid: base + pads
+        fp.size = new Vector2Int(3, 3);
+        fp.centerOffset = new Vector2(0f, -1f);
 
         var dark = LitMaterial("ChargerBody", new Color(0.32f, 0.34f, 0.38f), Color.black);
         var light = LitMaterial("ChargerLight", new Color(0.45f, 0.95f, 1f), new Color(0.3f, 0.9f, 1.2f));

@@ -117,9 +117,19 @@ public class DebugMenu : MonoBehaviour
 
         g = Section(p, "WORLD");
         speedLabel = Btn("SPEED x1", g, CycleSpeed).GetComponentInChildren<TMP_Text>();
-        Btn("TP FACTORY", g, () => Teleport(BotFactory.Instance != null ? BotFactory.Instance.transform : null, -4f));
+        Btn("TP FACTORY", g, () => Teleport(Fac() != null ? Fac().transform : null, -4f));
         Btn("TP CHARGER", g, () => Teleport(ChargingStation.All.Count > 0 ? ChargingStation.All[0].transform : null, 4f));
         Btn("TP RECYCLER", g, () => Teleport(HomeBase.All.Count > 0 ? HomeBase.All[0].transform : null, -4.5f));
+        TMP_Text freeLabel = null, fogLabel = null;
+        freeLabel = Btn("FREE BUILD: OFF", g, () => { BuildMode.FreeBuild = !BuildMode.FreeBuild; freeLabel.text = BuildMode.FreeBuild ? "FREE BUILD: ON" : "FREE BUILD: OFF"; }).GetComponentInChildren<TMP_Text>();
+        fogLabel = Btn("REVEAL MAP: OFF", g, () =>
+        {
+            var fog = FogOfWar.Instance;
+            if (fog == null) return;
+            fog.revealAll = !fog.revealAll;
+            fog.Refresh();
+            fogLabel.text = fog.revealAll ? "REVEAL MAP: ON" : "REVEAL MAP: OFF";
+        }).GetComponentInChildren<TMP_Text>();
     }
 
     Transform Section(RectTransform parent, string name)
@@ -178,11 +188,18 @@ public class DebugMenu : MonoBehaviour
 
     // ------------------------------------------------------------------ actions
 
+    /// The factory nearest to the player (there can be several).
+    static BotFactory Fac()
+    {
+        var p = GameObject.FindWithTag("Player");
+        return p != null ? BotFactory.Nearest(p.transform.position) : (BotFactory.All.Count > 0 ? BotFactory.All[0] : null);
+    }
+
     static void AddMats(int n) { if (Economy.Instance != null) Economy.Instance.AddMaterials(n); }
 
     static void WithUpgrades(Action<BuildingUpgrades> a)
     {
-        var f = BotFactory.Instance;
+        var f = Fac();
         if (f != null && f.Upgrades != null) a(f.Upgrades);
     }
 
@@ -196,7 +213,7 @@ public class DebugMenu : MonoBehaviour
 
     static void Spawn(int n, bool program)
     {
-        var f = BotFactory.Instance;
+        var f = Fac();
         if (f == null) return;
         var prog = program ? FirstProgram() : null;
         int before = ScoutBot.All.Count;
@@ -279,7 +296,7 @@ public class DebugMenu : MonoBehaviour
         }
         int queue = 0;
         foreach (var s in ChargingStation.All) queue += s.Queued;
-        var f = BotFactory.Instance;
+        var f = Fac();
         string fac = f != null ? "Factory Lv " + (f.Upgrades != null ? f.Upgrades.Level : 1) + "  ·  build " + f.BuildTime.ToString("0.#") + "s  ·  queued " + f.Queued : "";
         info.text = "Bots " + total + "  ·  no disk " + idle + "  ·  charging " + charging + "  ·  queue " + queue + "  ·  dead " + dead +
                     "\n" + fac + "  ·  " + Mathf.RoundToInt(1f / Mathf.Max(0.0001f, Time.unscaledDeltaTime)) + " fps";

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 
@@ -44,9 +45,37 @@ public int Queued { get; private set; }
     Vector3 bodyScale = Vector3.one;
     int shownSeconds = -1, shownQueued = -1;
 
+    /// Every factory in the scene (you can build more in build mode).
+    public static readonly List<BotFactory> All = new List<BotFactory>();
+    static int totalBuilt;   // bot numbers are unique across factories
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ResetStatics() { totalBuilt = 0; All.Clear(); Instance = null; }
+
+    void OnEnable() { if (!All.Contains(this)) All.Add(this); if (Instance == null) Instance = this; }
+
+    void OnDisable()
+    {
+        All.Remove(this);
+        if (Instance == this) Instance = All.Count > 0 ? All[0] : null;
+    }
+
+    /// Closest factory to a point (null if there are none).
+    public static BotFactory Nearest(Vector3 p)
+    {
+        BotFactory best = null;
+        float bd = float.MaxValue;
+        foreach (var f in All)
+        {
+            Vector3 d = f.transform.position - p; d.y = 0f;
+            if (d.sqrMagnitude < bd) { bd = d.sqrMagnitude; best = f; }
+        }
+        return best;
+    }
+
     void Awake()
     {
-        Instance = this;
+        if (Instance == null) Instance = this;
         Upgrades = GetComponent<BuildingUpgrades>();
         if (body != null) bodyScale = body.localScale;
     }
@@ -106,11 +135,12 @@ public int Queued { get; private set; }
         Vector3 pos = spawnPoint != null ? spawnPoint.position : transform.position;
         var go = Instantiate(botPrefab, pos, Quaternion.LookRotation(Vector3.back));
         built++;
-        go.name = "Scout Bot " + built;
+        totalBuilt++;
+        go.name = "Scout Bot " + totalBuilt;
         var bot = go.GetComponent<ScoutBot>();
         if (bot != null)
         {
-            bot.Init(RallyPoint(built - 1), built);
+            bot.Init(RallyPoint(built - 1), totalBuilt);
             if (Upgrades != null) bot.ApplyStats(Upgrades.Current);   // bots keep what they were built with
             if (Upgrades != null && Upgrades.AutoProgram != null) bot.SetProgram(Upgrades.AutoProgram);   // Master Disk: straight to work
         }

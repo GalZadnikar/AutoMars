@@ -44,6 +44,19 @@ public class ChargingStation : MonoBehaviour
         if (core != null) coreScale = core.localScale;
     }
 
+    // pads are thin discs: put them right on the (possibly leveled) ground
+    void Start()
+    {
+        if (pads == null) return;
+        foreach (var pad in pads)
+        {
+            if (pad == null) continue;
+            var pp = pad.position;
+            pp.y = GroundUtil.Height(pp, pp.y) + 0.03f;
+            pad.position = pp;
+        }
+    }
+
     public static ChargingStation Nearest(Vector3 p)
     {
         ChargingStation best = null;

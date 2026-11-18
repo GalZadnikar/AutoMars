@@ -4,7 +4,9 @@ using UnityEngine;
 public static class UIState
 {
     public static bool ModalOpen;
+    /// Placing buildings: world prompts hide, the player can still walk.
+    public static bool BuildMode;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    static void Reset() => ModalOpen = false;
+    static void Reset() { ModalOpen = false; BuildMode = false; }
 }
