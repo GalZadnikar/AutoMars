@@ -13,6 +13,16 @@ public class BotProgramPopup : MonoBehaviour
     public Button confirmButton, closeButton;
     public float slotIconScale = 1.45f;
 
+    [Header("v2 (landscape): robot, battery, follow")]
+    public ModelPreview preview;
+    public Image batteryFill;
+    public TMP_Text batteryText, statsText;
+    public Button followButton;
+    public Image followBg;
+    public TMP_Text followLabel;
+
+    float liveT;
+
     ScoutBot bot;
     readonly List<DiskProgram> inventory = new List<DiskProgram>();
     DiskProgram slot;
@@ -25,6 +35,7 @@ public class BotProgramPopup : MonoBehaviour
         wired = true;
         confirmButton.onClick.AddListener(Confirm);
         closeButton.onClick.AddListener(Close);
+        if (followButton != null) followButton.onClick.AddListener(ToggleFollow);
     }
 
     public void Open(ScoutBot target)
@@ -39,10 +50,15 @@ public class BotProgramPopup : MonoBehaviour
         UIState.ModalOpen = true;
         titleText.text = bot.BotName.ToUpper() + "  <color=#" + ColorUtility.ToHtmlStringRGB(BotLevelTag.LevelColor(bot.Level)) + ">LV " + bot.Level + "</color>";
         Rebuild();
+        foreach (var fit in GetComponentsInChildren<FitToSafeArea>()) fit.Apply();
+        if (preview != null && BotFactory.Instance != null) preview.Show(BotFactory.Instance.botPrefab);
+        liveT = 0f;
+        RefreshLive();
     }
 
     public void Close()
     {
+        if (preview != null) preview.Hide();
         ClearIcons();
         gameObject.SetActive(false);
         UIState.ModalOpen = false;
@@ -52,6 +68,45 @@ public class BotProgramPopup : MonoBehaviour
     void Update()
     {
         if (bot != null) statusText.text = bot.Status;
+        liveT -= Time.unscaledDeltaTime;
+        if (liveT <= 0f) { liveT = 0.2f; RefreshLive(); }
+    }
+
+    // Follow applies right away (it's a command, not part of the disk change)
+    void ToggleFollow()
+    {
+        if (bot == null) return;
+        bot.SetFollow(!bot.Following);
+        GameToast.Show(bot.Following ? bot.BotName.ToUpper() + " IS FOLLOWING YOU" : bot.BotName.ToUpper() + " BACK TO WORK", new Color(0.45f, 0.95f, 1f));
+        RefreshLive();
+    }
+
+    void RefreshLive()
+    {
+        if (bot == null) return;
+        float v = bot.Battery01;
+        if (batteryFill != null)
+        {
+            var rt = batteryFill.rectTransform;
+            rt.anchorMax = new Vector2(Mathf.Max(0.01f, v), 1f);
+            batteryFill.color = bot.IsDead ? WorkshopTheme.Red : bot.IsCharging ? WorkshopTheme.Cyan
+                              : v > 0.5f ? WorkshopTheme.Green : v > 0.2f ? WorkshopTheme.Yellow : WorkshopTheme.Red;
+        }
+        if (batteryText != null)
+            batteryText.text = Mathf.RoundToInt(v * 100f) + "%   " + Stats.Clock(v * bot.batteryRuntime) + " left" +
+                               (bot.IsDead ? "   OUT OF POWER" : bot.IsCharging ? "   CHARGING" : "");
+        if (statsText != null)
+            statsText.text = "Move  " + bot.moveSpeed.ToString("0.0") + " m/s\n" +
+                             "Carry  " + bot.Carried + " / " + bot.capacity + "\n" +
+                             "Collect  " + (1f / Mathf.Max(0.01f, bot.pickupInterval)).ToString("0.0") + "/s\n" +
+                             "Full charge  " + Stats.Clock(bot.batteryRuntime);
+        if (followLabel != null)
+        {
+            bool on = bot.Following;
+            followLabel.text = on ? "FOLLOW: ON" : "FOLLOW: OFF";
+            followLabel.color = on ? WorkshopTheme.DarkText : WorkshopTheme.White;
+            if (followBg != null) followBg.color = on ? WorkshopTheme.Cyan : WorkshopTheme.ButtonOff;
+        }
     }
 
     void Confirm()

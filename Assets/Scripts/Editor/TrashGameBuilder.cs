@@ -175,7 +175,7 @@ public static class TrashGameBuilder
         var botBtn = WorldBtn("BotButton", prompts, "PROGRAM", Cyan, DarkText);
 
         var fp = BuildFactoryPopup(canvas);
-        var bp = BuildBotPopup(canvas);
+        var bp = BotPopupBuilder.Build(canvas);   // landscape v2 (Module 5)
 
         prompts.SetAsLastSibling();
         fp.transform.SetAsLastSibling();

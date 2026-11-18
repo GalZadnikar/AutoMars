@@ -71,6 +71,24 @@ public class ScoutBot : MonoBehaviour
     /// Walking to / queueing at / sitting on a charger.
     public bool SeekingCharge => charging != null;
     public void AddCharge(float fraction) => battery = Mathf.Min(batteryRuntime, battery + fraction * batteryRuntime);
+    // ---------- follow ----------
+    /// Escort mode: trails the player instead of running its program.
+    public bool Following { get; private set; }
+    static readonly List<ScoutBot> followers = new List<ScoutBot>();
+
+    public void SetFollow(bool on)
+    {
+        if (Following == on) return;
+        Following = on;
+        if (on) { if (!followers.Contains(this)) followers.Add(this); }
+        else
+        {
+            followers.Remove(this);
+            behaviour = Program != null ? Program.CreateBehaviour(this) : null;   // straight back to its job
+        }
+        labelInit = false;
+    }
+
     public void SetBattery01(float f) { battery = Mathf.Clamp01(f) * batteryRuntime; if (battery <= 0f) Die(); }
 
     struct Flight
@@ -112,6 +130,7 @@ public class ScoutBot : MonoBehaviour
     void OnDisable()
     {
         All.Remove(this);
+        followers.Remove(this);
         ChargingStation.LeaveAll(this);
     }
 
@@ -184,6 +203,13 @@ public class ScoutBot : MonoBehaviour
             return;
         }
 
+        if (Following)
+        {
+            if (NeedsCharge(dt)) { charging = new ChargeBehaviour(this); charging.Tick(dt); return; }
+            TickFollow(dt);
+            return;
+        }
+
         if (behaviour != null)
         {
             if (NeedsCharge(dt))
@@ -198,6 +224,39 @@ public class ScoutBot : MonoBehaviour
 
         Status = "Waiting for a disk";
         if (MoveTowards(HomePosition, 0.05f)) FaceDirection(Vector3.back);
+    }
+
+    [Header("Follow")]
+    public float followDistance = 2.4f;
+    public float followSpacing = 1.7f;
+    [Tooltip("Speed multiplier while catching up with the player")]
+    public float followCatchUp = 1.6f;
+    float speedMul = 1f;
+
+    // V-ish formation behind the player, 3 per row
+    void TickFollow(float dt)
+    {
+        Status = "Following you";
+        var p = PlayerInventory.Instance != null ? PlayerInventory.Instance.transform : null;
+        if (p == null) return;
+        int i = Mathf.Max(0, followers.IndexOf(this));
+        int row = i / 3, col = i % 3;
+        Vector3 back = -p.forward; back.y = 0f;
+        if (back.sqrMagnitude < 0.01f) back = Vector3.back;
+        back.Normalize();
+        Vector3 side = Vector3.Cross(Vector3.up, back);
+        float lateral = (col == 0 ? 0f : col == 1 ? -1f : 1f) * followSpacing;
+        Vector3 slot = p.position + back * (followDistance + row * followSpacing + Mathf.Abs(lateral) * 0.35f) + side * lateral;
+
+        Vector3 d = slot - transform.position; d.y = 0f;
+        float dist = d.magnitude;
+        if (dist > 0.5f)
+        {
+            speedMul = dist > 4f ? followCatchUp : 1f;
+            MoveTowards(slot, 0.2f);
+            speedMul = 1f;
+        }
+        else FaceDirection(p.forward);
     }
 
     /// Head back when the remaining runtime only just covers the walk to the nearest charger.
@@ -271,7 +330,7 @@ public class ScoutBot : MonoBehaviour
         if (dist <= stopDistance + 0.05f) return true;
         Vector3 dir = d / dist;
         FaceDirection(dir);
-        float step = Mathf.Min(moveSpeed * Time.deltaTime, dist - stopDistance);
+        float step = Mathf.Min(moveSpeed * speedMul * Time.deltaTime, dist - stopDistance);
         pos += dir * step;
         pos.y = GroundUtil.Height(pos, pos.y);
         transform.position = pos;
@@ -394,7 +453,7 @@ public class ScoutBot : MonoBehaviour
     void UpdateLabel()
     {
         if (statusLabel == null) return;
-        int power = dead ? 2 : IsCharging ? 1 : 0;
+        int power = dead ? 2 : IsCharging ? 1 : Following ? 3 : 0;
         if (labelInit && shownCarried == carried && shownProgram == Program && shownPower == power) return;
         labelInit = true; shownCarried = carried; shownProgram = Program; shownPower = power;
         if (power == 2)
@@ -405,6 +464,11 @@ public class ScoutBot : MonoBehaviour
         else if (power == 1)
         {
             statusLabel.text = "CHARGING";
+            statusLabel.color = new Color(0.45f, 0.95f, 1f);
+        }
+        else if (power == 3)
+        {
+            statusLabel.text = "FOLLOW";
             statusLabel.color = new Color(0.45f, 0.95f, 1f);
         }
         else if (Program == null)
