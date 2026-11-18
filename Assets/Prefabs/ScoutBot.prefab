@@ -41,6 +41,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1418913877228290170}
   - component: {fileID: 6038518154969049635}
+  - component: {fileID: 591468558827933662}
   m_Layer: 0
   m_Name: ScoutBot
   m_TagString: Untagged
@@ -92,6 +93,19 @@ MonoBehaviour:
   idleState: 01_Scout_Bot_Idle
   runState: 01_Scout_Bot_Run
   workState: 01_Scout_Bot_Attack
+--- !u!114 &591468558827933662
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 369488321735644993}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0bcb1ed89590f4d839b68f023fa15bf3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FogRevealer
+  radius: 6
 --- !u!1 &4685818503472662098
 GameObject:
   m_ObjectHideFlags: 0

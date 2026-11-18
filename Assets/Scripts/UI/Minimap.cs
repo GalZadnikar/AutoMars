@@ -19,6 +19,8 @@ public class Minimap : MonoBehaviour
     [Tooltip("Home / Factory icons stick to the map edge when they are out of view.")]
     public bool pinBuildingsToEdge = true;
     public bool showLevelBorder = true;
+    [Tooltip("Darken unexplored areas and hide undiscovered trash/disks (needs a FogOfWar in the scene).")]
+    public bool showFogOfWar = true;
     [Tooltip("Rotate the map so that 'up' on the map matches the direction the camera looks.")]
     public bool rotateWithCamera = true;
 
@@ -53,6 +55,7 @@ public class Minimap : MonoBehaviour
     }
 
     RectTransform viewport, content, playerIcon, levelBorder;
+    RawImage fogOverlay;
     Transform player;
     readonly Dictionary<Component, Marker> markers = new Dictionary<Component, Marker>();
     readonly List<Component> toRemove = new List<Component>();
@@ -99,6 +102,15 @@ public class Minimap : MonoBehaviour
             lb.type = Image.Type.Sliced;
             lb.pixelsPerUnitMultiplier = 2f;
             levelBorder = lb.rectTransform;
+        }
+
+        if (showFogOfWar)
+        {
+            var fogGo = new GameObject("FogOfWar", typeof(RectTransform));
+            fogGo.transform.SetParent(content, false);
+            fogOverlay = fogGo.AddComponent<RawImage>();
+            fogOverlay.raycastTarget = false;
+            fogOverlay.enabled = false;
         }
 
         var pi = NewImage("PlayerIcon", content, sArrow, playerColor);
@@ -194,6 +206,9 @@ public class Minimap : MonoBehaviour
                 m.image.color = bot.Program != null ? bot.Program.color : botColor;
             }
 
+            if (showFogOfWar && (m.kind == Kind.Trash || m.kind == Kind.Disk) && FogOfWar.Instance != null)
+                visible &= FogOfWar.Instance.IsExplored(m.source.transform.position);
+
             if (m.icon.gameObject.activeSelf != visible) m.icon.gameObject.SetActive(visible);
             if (!visible) continue;
 
@@ -215,6 +230,20 @@ public class Minimap : MonoBehaviour
         {
             if (markers[k].icon != null) Destroy(markers[k].icon.gameObject);
             markers.Remove(k);
+        }
+
+        if (fogOverlay != null)
+        {
+            var fog = FogOfWar.Instance;
+            bool on = fog != null && fog.isActiveAndEnabled && fog.MinimapTexture != null;
+            if (fogOverlay.enabled != on) fogOverlay.enabled = on;
+            if (on)
+            {
+                if (fogOverlay.texture != fog.MinimapTexture) fogOverlay.texture = fog.MinimapTexture;
+                var rt = fogOverlay.rectTransform;
+                rt.anchoredPosition = (fog.worldCenter - MapCenter) * Scale;
+                rt.sizeDelta = fog.worldSize * Scale;
+            }
         }
 
         if (levelBorder != null)
