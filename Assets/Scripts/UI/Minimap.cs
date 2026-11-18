@@ -35,6 +35,8 @@ public class Minimap : MonoBehaviour
     public Color trashColor = new Color(0.86f, 0.72f, 0.38f);
     public Color diskColor = new Color(0.35f, 0.85f, 1f);
     public Color botColor = new Color(0.70f, 0.70f, 0.75f);
+    public Color chargerColor = new Color(0.45f, 0.90f, 1f);
+    public Color deadBotColor = new Color(1f, 0.3f, 0.25f);
 
     [Header("Icon sizes (canvas units)")]
     public float playerSize = 36f;
@@ -43,7 +45,7 @@ public class Minimap : MonoBehaviour
     public float diskSize = 18f;
     public float botSize = 14f;
 
-    enum Kind { Home, Factory, Trash, Disk, Bot }
+    enum Kind { Home, Factory, Trash, Disk, Bot, Charger }
 
     class Marker
     {
@@ -126,13 +128,14 @@ public class Minimap : MonoBehaviour
         {
             case Kind.Home: sprite = sRoundFill; color = homeColor; size = buildingSize; letter = "H"; break;
             case Kind.Factory: sprite = sRoundFill; color = factoryColor; size = buildingSize; letter = "F"; break;
+            case Kind.Charger: sprite = sRoundFill; color = chargerColor; size = buildingSize; letter = "C"; break;
             case Kind.Trash: sprite = sCircle; color = trashColor; size = trashSize; break;
             case Kind.Disk: sprite = sDiamond; color = diskColor; size = diskSize; break;
             default: sprite = sCircle; color = botColor; size = botSize; break;
         }
 
         var img = NewImage(kind + "Icon", content, sprite, color);
-        if (kind == Kind.Home || kind == Kind.Factory) img.type = Image.Type.Sliced;
+        if (kind == Kind.Home || kind == Kind.Factory || kind == Kind.Charger) img.type = Image.Type.Sliced;
         img.rectTransform.sizeDelta = Vector2.one * size;
         AddOutline(img);
 
@@ -166,6 +169,7 @@ public class Minimap : MonoBehaviour
         foreach (var d in FindObjectsByType<DiskPickup>(FindObjectsSortMode.None)) Ensure(Kind.Disk, d);
         foreach (var p in TrashPile.All) Ensure(Kind.Trash, p);
         foreach (var b in ScoutBot.All) Ensure(Kind.Bot, b);
+        foreach (var c in ChargingStation.All) Ensure(Kind.Charger, c);
     }
 
     void Ensure(Kind kind, Component c)
@@ -203,7 +207,7 @@ public class Minimap : MonoBehaviour
             else if (m.kind == Kind.Bot)
             {
                 var bot = (ScoutBot)m.source;
-                m.image.color = bot.Program != null ? bot.Program.color : botColor;
+                m.image.color = bot.IsDead ? deadBotColor : bot.Program != null ? bot.Program.color : botColor;
             }
 
             if (showFogOfWar && (m.kind == Kind.Trash || m.kind == Kind.Disk) && FogOfWar.Instance != null)

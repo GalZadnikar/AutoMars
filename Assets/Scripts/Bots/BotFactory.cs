@@ -10,7 +10,7 @@ public class BotFactory : MonoBehaviour
     [Header("Production (upgradeable)")]
     public GameObject botPrefab;
     public int costPerBot = 10;
-    public float buildTime = 30f;
+    public float buildTime = 5f;
 
     [Header("Zone")]
     public float radius = 3.8f;
@@ -114,6 +114,9 @@ public int Queued { get; private set; }
             if (Upgrades != null) bot.ApplyStats(Upgrades.Current);   // bots keep what they were built with
         }
     }
+
+    /// Debug: build one bot right now (no cost, no wait).
+    public void DevSpawnNow() => Spawn();
 
     public Vector3 RallyPoint(int index)
     {

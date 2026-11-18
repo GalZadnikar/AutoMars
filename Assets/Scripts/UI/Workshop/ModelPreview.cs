@@ -111,6 +111,9 @@ public class ModelPreview : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
         go.name = "Preview " + prefab.name;
 
         foreach (var t in go.GetComponentsInChildren<TMP_Text>(true)) DestroyImmediate(t.gameObject);
+        // world-space HUD bits (battery bar sprites, rings) don't belong in the showcase
+        foreach (var r in go.GetComponentsInChildren<SpriteRenderer>(true)) if (r != null) DestroyImmediate(r.gameObject);
+        foreach (var r in go.GetComponentsInChildren<LineRenderer>(true)) if (r != null) DestroyImmediate(r.gameObject);
         var behaviours = go.GetComponentsInChildren<MonoBehaviour>(true);
         for (int i = behaviours.Length - 1; i >= 0; i--) if (behaviours[i] != null) DestroyImmediate(behaviours[i]);
         foreach (var c in go.GetComponentsInChildren<Collider>(true)) DestroyImmediate(c);

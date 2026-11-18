@@ -23,6 +23,21 @@ public class ScoutBot : MonoBehaviour
     public float pickupInterval = 0.5f;
     public float depositInterval = 0.2f;
 
+    [Header("Power")]
+    [Tooltip("Seconds of active work (moving / working) on a full battery")]
+    public float batteryRuntime = 120f;
+    [Tooltip("Always go charge below this fraction")]
+    [Range(0f, 1f)] public float lowBatteryFraction = 0.15f;
+    [Tooltip("Extra seconds kept in reserve on top of the walk to the charger")]
+    public float reserveSeconds = 8f;
+    [Tooltip("A dead bot gets jump-started while the player stands this close")]
+    public float jumpStartRadius = 2.6f;
+    [Tooltip("Battery fraction per second the player gives a dead bot")]
+    public float jumpStartRate = 0.12f;
+    [Tooltip("A dead bot wakes up at this charge (then walks to a charger)")]
+    [Range(0f, 1f)] public float jumpStartTo = 0.25f;
+    public BatteryBar batteryBar;
+
     [Header("References")]
     public Animator animator;
     public Transform carryAnchor;
@@ -48,6 +63,16 @@ public class ScoutBot : MonoBehaviour
     public int Carried => carried;
     public bool IsFull => carried >= capacity;
 
+    // ---------- power ----------
+    public float Battery01 => batteryRuntime > 0f ? Mathf.Clamp01(battery / batteryRuntime) : 1f;
+    public bool IsDead => dead;
+    /// Standing on a pad and charging right now.
+    public bool IsCharging => charging != null && charging.IsCharging;
+    /// Walking to / queueing at / sitting on a charger.
+    public bool SeekingCharge => charging != null;
+    public void AddCharge(float fraction) => battery = Mathf.Min(batteryRuntime, battery + fraction * batteryRuntime);
+    public void SetBattery01(float f) { battery = Mathf.Clamp01(f) * batteryRuntime; if (battery <= 0f) Die(); }
+
     struct Flight
     {
         public Transform item;
@@ -69,15 +94,26 @@ public class ScoutBot : MonoBehaviour
     int shownCarried = -1;
     DiskProgram shownProgram;
     bool labelInit;
+    int shownPower = -1;
+
+    float battery = -1f;
+    bool dead;
+    ChargeBehaviour charging;
+    float chargeCheckT;
 
     void Awake()
     {
         baseScale = transform.localScale;
         HomePosition = transform.position;
+        battery = batteryRuntime;
     }
 
     void OnEnable() { if (!All.Contains(this)) All.Add(this); }
-    void OnDisable() { All.Remove(this); }
+    void OnDisable()
+    {
+        All.Remove(this);
+        ChargingStation.LeaveAll(this);
+    }
 
     /// Called by the factory right after spawning.
     public void Init(Vector3 rallyPoint, int number)
@@ -104,6 +140,8 @@ public class ScoutBot : MonoBehaviour
         capacity = s.Int(StatType.CarryCapacity);
         pickupInterval = 1f / Mathf.Max(0.01f, s[StatType.CollectRate]);
         depositInterval = 1f / Mathf.Max(0.01f, s[StatType.UnloadRate]);
+        batteryRuntime = Mathf.Max(1f, s[StatType.BatteryRuntime]);
+        battery = batteryRuntime;   // new bots roll out fully charged
         labelInit = false;
     }
 
@@ -119,18 +157,108 @@ public class ScoutBot : MonoBehaviour
             transform.localScale = baseScale * EaseOutBack(spawnT);
         }
 
-        if (behaviour != null) behaviour.Tick(dt);
-        else
-        {
-            Status = "Waiting for a disk";
-            if (MoveTowards(HomePosition, 0.05f)) FaceDirection(Vector3.back);
-        }
+        TickBrain(dt);
+        DrainBattery(dt);
 
         Separate(dt);
         UpdateFlights(dt);
         UpdateAnimation();
         UpdateLabel();
     }
+
+    // ---------- brain + power ----------
+
+    void TickBrain(float dt)
+    {
+        if (dead) { TickDead(dt); return; }
+
+        if (charging != null)
+        {
+            charging.Tick(dt);
+            if (charging.Done)
+            {
+                charging = null;
+                // start the program fresh (it re-checks piles / goes home if full)
+                behaviour = Program != null ? Program.CreateBehaviour(this) : null;
+            }
+            return;
+        }
+
+        if (behaviour != null)
+        {
+            if (NeedsCharge(dt))
+            {
+                charging = new ChargeBehaviour(this);
+                charging.Tick(dt);
+                return;
+            }
+            behaviour.Tick(dt);
+            return;
+        }
+
+        Status = "Waiting for a disk";
+        if (MoveTowards(HomePosition, 0.05f)) FaceDirection(Vector3.back);
+    }
+
+    /// Head back when the remaining runtime only just covers the walk to the nearest charger.
+    bool NeedsCharge(float dt)
+    {
+        chargeCheckT -= dt;
+        if (chargeCheckT > 0f) return false;
+        chargeCheckT = 0.5f;
+        var st = ChargingStation.Nearest(transform.position);
+        if (st == null) return false;
+        Vector3 d = st.transform.position - transform.position; d.y = 0f;
+        float walk = d.magnitude / Mathf.Max(0.1f, moveSpeed);
+        return battery <= walk * 1.3f + reserveSeconds || Battery01 <= lowBatteryFraction;
+    }
+
+    // energy is only used while moving or working
+    void DrainBattery(float dt)
+    {
+        if (dead || IsCharging) return;
+        if (moving || working) battery = Mathf.Max(0f, battery - dt);
+        if (battery <= 0f) Die();
+    }
+
+    void Die()
+    {
+        battery = 0f;
+        dead = true;
+        if (charging != null) { charging.Cancel(); charging = null; }
+        ChargingStation.LeaveAll(this);
+        Status = "Out of power";
+    }
+
+    // shut down in place; the player can jump-start it by standing next to it
+    void TickDead(float dt)
+    {
+        var player = PlayerInventory.Instance != null ? PlayerInventory.Instance.transform : null;
+        bool near = false;
+        if (player != null)
+        {
+            Vector3 d = player.position - transform.position; d.y = 0f;
+            near = d.sqrMagnitude <= jumpStartRadius * jumpStartRadius;
+        }
+        if (!near) { Status = "Out of power. Stand next to it to jump-start"; return; }
+
+        battery = Mathf.Min(batteryRuntime, battery + jumpStartRate * batteryRuntime * dt);
+        Status = "Jump-starting " + Mathf.RoundToInt(Battery01 * 100f) + "%";
+        if (Battery01 >= jumpStartTo)
+        {
+            dead = false;
+            chargeCheckT = 0f;
+            if (Program != null) behaviour = Program.CreateBehaviour(this);
+            // only a little juice: walk straight to a charger
+            if (ChargingStation.Nearest(transform.position) != null) charging = new ChargeBehaviour(this);
+        }
+    }
+
+    [ContextMenu("Dev: battery to 20%")]
+    void DevBattery20() => SetBattery01(0.2f);
+
+    [ContextMenu("Dev: battery empty")]
+    void DevBatteryEmpty() => SetBattery01(0f);
 
     // ---------- movement ----------
 
@@ -255,6 +383,8 @@ public class ScoutBot : MonoBehaviour
     void UpdateAnimation()
     {
         if (animator == null) return;
+        float spd = dead ? 0f : 1f;   // frozen when out of power
+        if (animator.speed != spd) animator.speed = spd;
         int s = moving ? 1 : working ? 2 : 0;
         if (s == animState) return;
         animState = s;
@@ -264,9 +394,20 @@ public class ScoutBot : MonoBehaviour
     void UpdateLabel()
     {
         if (statusLabel == null) return;
-        if (labelInit && shownCarried == carried && shownProgram == Program) return;
-        labelInit = true; shownCarried = carried; shownProgram = Program;
-        if (Program == null)
+        int power = dead ? 2 : IsCharging ? 1 : 0;
+        if (labelInit && shownCarried == carried && shownProgram == Program && shownPower == power) return;
+        labelInit = true; shownCarried = carried; shownProgram = Program; shownPower = power;
+        if (power == 2)
+        {
+            statusLabel.text = "NO POWER";
+            statusLabel.color = new Color(1f, 0.32f, 0.25f);
+        }
+        else if (power == 1)
+        {
+            statusLabel.text = "CHARGING";
+            statusLabel.color = new Color(0.45f, 0.95f, 1f);
+        }
+        else if (Program == null)
         {
             statusLabel.text = "NO DISK";
             statusLabel.color = new Color(1f, 0.55f, 0.45f);

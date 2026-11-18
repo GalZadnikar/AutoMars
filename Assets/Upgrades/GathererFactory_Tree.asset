@@ -26,6 +26,9 @@ MonoBehaviour:
   - stat: 2
     op: 1
     value: 5
+  - stat: 6
+    op: 1
+    value: 5
   masterDiskUnlockLevel: 4
   tiers:
   - options:
@@ -71,14 +74,14 @@ MonoBehaviour:
         op: 1
         value: -30
   - options:
-    - title: Overdrive Motors
-      flavor: 
-      glyph: OVR
+    - title: Efficient Cells
+      flavor: Longer trips between charges.
+      glyph: CEL
       icon: {fileID: 0}
       mods:
-      - stat: 0
+      - stat: 6
         op: 1
-        value: 20
+        value: 40
     - title: Compact Stacking
       flavor: 
       glyph: STK
@@ -118,6 +121,17 @@ MonoBehaviour:
       - stat: 3
         op: 1
         value: 35
+    - title: Long-Life Cells
+      flavor: Huge battery, slower hands.
+      glyph: BAT
+      icon: {fileID: 0}
+      mods:
+      - stat: 6
+        op: 1
+        value: 60
+      - stat: 2
+        op: 1
+        value: -10
   - options:
     - title: Turbo Core
       flavor: 'Overclock: blazing fast, small backpack.'

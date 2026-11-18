@@ -98,7 +98,7 @@ public static class WorkshopBuilder
         tree.levelCosts = new List<int> { 30, 60, 120, 200, 320 };
         tree.masterDiskUnlockLevel = 4;
         // robot tech level: every factory level makes the base bot a bit better
-        tree.perLevel = new List<StatMod> { Pct(MoveSpeed, 5), Flat(CarryCapacity, 1), Pct(CollectRate, 5) };
+        tree.perLevel = new List<StatMod> { Pct(MoveSpeed, 5), Flat(CarryCapacity, 1), Pct(CollectRate, 5), Pct(BatteryRuntime, 5) };
 
         tree.tiers = new List<UpgradeTier>
         {
@@ -107,11 +107,12 @@ public static class WorkshopBuilder
             Tier(MakePerk("Quick Grabbers", "GRB", "Fill up faster at the pile.", Pct(CollectRate, 40)),
                  MakePerk("Assembly Line", "BLD", "The factory builds faster.", Pct(BuildTime, -25)),
                  MakePerk("Bulk Discount", "$", "Cheaper bots.", Pct(BotCost, -30))),
-            Tier(MakePerk("Overdrive Motors", "OVR", null, Pct(MoveSpeed, 20)),
+            Tier(MakePerk("Efficient Cells", "CEL", "Longer trips between charges.", Pct(BatteryRuntime, 40)),
                  MakePerk("Compact Stacking", "STK", null, Flat(CarryCapacity, 2)),
                  MakePerk("Dump Chute", "DMP", "Unload at the base in a blink.", Pct(UnloadRate, 100))),
             Tier(MakePerk("Heavy Lifter", "HVY", "Big loads, slower legs.", Flat(CarryCapacity, 4), Pct(MoveSpeed, -10)),
-                 MakePerk("Twin Arms", "ARM", "Grab and drop faster.", Pct(CollectRate, 35), Pct(UnloadRate, 35))),
+                 MakePerk("Twin Arms", "ARM", "Grab and drop faster.", Pct(CollectRate, 35), Pct(UnloadRate, 35)),
+                 MakePerk("Long-Life Cells", "BAT", "Huge battery, slower hands.", Pct(BatteryRuntime, 60), Pct(CollectRate, -10))),
             Tier(MakePerk("Turbo Core", "TRB", "Overclock: blazing fast, small backpack.", Pct(MoveSpeed, 45), Flat(CarryCapacity, -2)),
                  MakePerk("Mega Hauler", "MEG", "Overclock: double load, heavy steps.", Pct(CarryCapacity, 100), Pct(MoveSpeed, -20)),
                  MakePerk("Mass Production", "MAS", "Overclock: churn out bots.", Pct(BuildTime, -40), Pct(BotCost, -20))),
@@ -234,8 +235,8 @@ public static class WorkshopBuilder
         var list = NewRect("List", stats);
         Stretch(list);
         var vl = list.gameObject.AddComponent<VerticalLayoutGroup>();
-        vl.padding = new RectOffset(20, 18, 18, 44);
-        vl.spacing = 3;
+        vl.padding = new RectOffset(20, 18, 16, 40);
+        vl.spacing = 1;
         vl.childControlWidth = true; vl.childControlHeight = true;
         vl.childForceExpandWidth = true; vl.childForceExpandHeight = false;
         ws.statsList = list;
@@ -326,7 +327,7 @@ public static class WorkshopBuilder
     static StatRow StatRowTemplate(Transform parent)
     {
         var rt = NewRect("StatRowTemplate", parent);
-        rt.gameObject.AddComponent<LayoutElement>().preferredHeight = 46;
+        rt.gameObject.AddComponent<LayoutElement>().preferredHeight = 42;
         var row = rt.gameObject.AddComponent<StatRow>();
 
         var l = NewRect("Label", rt); Anchor(l, 0f, 0.55f);

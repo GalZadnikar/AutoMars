@@ -11,6 +11,7 @@ public enum StatType
     UnloadRate,
     BuildTime,
     BotCost,
+    BatteryRuntime,   // seconds of active work on a full battery (keep new stats at the end: the enum is saved as a number)
 }
 
 public enum ModOp { AddFlat, AddPercent }
@@ -54,6 +55,7 @@ public static class Stats
         StatType.UnloadRate => "Unload Rate",
         StatType.BuildTime => "Build Time",
         StatType.BotCost => "Bot Cost",
+        StatType.BatteryRuntime => "Battery",
         _ => s.ToString(),
     };
 
@@ -69,6 +71,7 @@ public static class Stats
         StatType.UnloadRate => v.ToString("0.0") + "/s",
         StatType.BuildTime => v.ToString("0.#") + "s",
         StatType.BotCost => Mathf.RoundToInt(v).ToString(),
+        StatType.BatteryRuntime => Clock(v),
         _ => v.ToString("0.##"),
     };
 
@@ -80,8 +83,20 @@ public static class Stats
             int d = Mathf.RoundToInt(delta);
             return d == 0 ? "" : (d > 0 ? "+" : "-") + Mathf.Abs(d);
         }
+        if (s == StatType.BatteryRuntime)
+        {
+            int sec = Mathf.RoundToInt(delta);
+            return sec == 0 ? "" : (sec > 0 ? "+" : "-") + Mathf.Abs(sec) + "s";
+        }
         if (Mathf.Abs(delta) < 0.05f) return "";
         return (delta > 0 ? "+" : "-") + Mathf.Abs(delta).ToString(s == StatType.BuildTime ? "0.#" : "0.0");
+    }
+
+    /// 125 -> "2:05"
+    public static string Clock(float seconds)
+    {
+        int s = Mathf.Max(0, Mathf.RoundToInt(seconds));
+        return (s / 60) + ":" + (s % 60).ToString("00");
     }
 
     public static bool DeltaIsGood(StatType s, float delta) => LowerIsBetter(s) ? delta < 0f : delta > 0f;

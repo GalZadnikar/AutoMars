@@ -87,6 +87,21 @@ public class BuildingUpgrades : MonoBehaviour
         return true;
     }
 
+    /// Debug: jump to a level for free.
+    public void DevSetLevel(int newLevel)
+    {
+        level = Mathf.Clamp(newLevel, 1, MaxLevel);
+        Changed();
+    }
+
+    /// Debug: back to level 1 with nothing equipped.
+    public void DevReset()
+    {
+        level = 1;
+        for (int i = 0; i < picks.Count; i++) picks[i] = -1;
+        Changed();
+    }
+
     void Changed()
     {
         current = null;
@@ -108,6 +123,7 @@ public class BuildingUpgrades : MonoBehaviour
         s[StatType.UnloadRate] = 1f / Mathf.Max(0.01f, bot != null ? bot.depositInterval : 0.2f);
         s[StatType.BuildTime] = f != null ? f.buildTime : 30f;
         s[StatType.BotCost] = f != null ? f.costPerBot : 10;
+        s[StatType.BatteryRuntime] = bot != null ? bot.batteryRuntime : 120f;
 
         if (tree == null) return s;
 
