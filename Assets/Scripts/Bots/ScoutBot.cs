@@ -38,6 +38,9 @@ public class ScoutBot : MonoBehaviour
 
     public DiskProgram Program { get; private set; }
     public string BotName { get; private set; } = "Scout Bot";
+    /// Tech level of the factory that built this bot (snapshot at spawn).
+    public int Level { get; private set; } = 1;
+
     public string Status { get; set; } = "Waiting for a disk";
     public Vector3 HomePosition { get; set; }
     public int Carried => carried;
@@ -89,6 +92,19 @@ public class ScoutBot : MonoBehaviour
         behaviour = program != null ? program.CreateBehaviour(this) : null;
         Status = program != null ? "Starting " + program.displayName : "Waiting for a disk";
     }
+
+    /// Called by the factory at spawn: the bot keeps the level and perks it was built with.
+    public void ApplyStats(StatBlock s)
+    {
+        if (s == null) return;
+        Level = s.Level;
+        moveSpeed = s[StatType.MoveSpeed];
+        capacity = s.Int(StatType.CarryCapacity);
+        pickupInterval = 1f / Mathf.Max(0.01f, s[StatType.CollectRate]);
+        depositInterval = 1f / Mathf.Max(0.01f, s[StatType.UnloadRate]);
+        labelInit = false;
+    }
+
 
     void Update()
     {

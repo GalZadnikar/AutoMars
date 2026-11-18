@@ -7,6 +7,11 @@ public class PlayerInteractions : MonoBehaviour
     public WorldButton botButton;
     public FactoryPopup factoryPopup;
     public BotProgramPopup botPopup;
+    [Header("Workshop (upgrade tree)")]
+    public WorldButton upgradeButton;
+    public WorkshopScreen workshop;
+    [Tooltip("Screen offset so BUILD BOTS and UPGRADE sit side by side")]
+    public Vector2 factoryButtonSpread = new Vector2(178f, 0f);
 
     public float botRadius = 3f;
     public Vector3 factoryButtonOffset = new Vector3(0f, 5.2f, 0f);
@@ -14,6 +19,8 @@ public class PlayerInteractions : MonoBehaviour
 
     BotFactory shownFactory;
     ScoutBot shownBot;
+    TMPro.TMP_Text upgradeLabel;
+    int upgradeAlert = -1;
 
     void Update()
     {
@@ -28,10 +35,18 @@ public class PlayerInteractions : MonoBehaviour
             if (f != null)
             {
                 f.SetHighlight(true);
-                factoryButton.Show(f.transform, factoryButtonOffset, () => factoryPopup.Open(f));
+                bool canUpgrade = upgradeButton != null && workshop != null && f.Upgrades != null;
+                factoryButton.Show(f.transform, factoryButtonOffset, () => factoryPopup.Open(f), canUpgrade ? -factoryButtonSpread : Vector2.zero);
+                if (canUpgrade) upgradeButton.Show(f.transform, factoryButtonOffset, () => workshop.Open(f), factoryButtonSpread);
+                upgradeAlert = -1;
             }
-            else factoryButton.Hide();
+            else
+            {
+                factoryButton.Hide();
+                if (upgradeButton != null) upgradeButton.Hide();
+            }
         }
+        UpdateUpgradeAlert();
 
         ScoutBot best = null;
         float bestD = botRadius * botRadius;
@@ -57,5 +72,18 @@ public class PlayerInteractions : MonoBehaviour
         shownBot = null;
         factoryButton.Hide();
         botButton.Hide();
+        if (upgradeButton != null) upgradeButton.Hide();
+    }
+
+    // "UPGRADE !" when there's a skill point to spend or a level-up is affordable
+    void UpdateUpgradeAlert()
+    {
+        if (shownFactory == null || upgradeButton == null || shownFactory.Upgrades == null) return;
+        var u = shownFactory.Upgrades;
+        int alert = u.UnspentPoints > 0 || u.CanAffordLevelUp ? 1 : 0;
+        if (alert == upgradeAlert) return;
+        upgradeAlert = alert;
+        if (upgradeLabel == null) upgradeLabel = upgradeButton.GetComponentInChildren<TMPro.TMP_Text>(true);
+        if (upgradeLabel != null) upgradeLabel.text = alert == 1 ? "UPGRADE !" : "UPGRADE";
     }
 }

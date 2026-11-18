@@ -211,6 +211,7 @@ public static class TrashGameBuilder
 
         var panel = Place(NewRect("Panel", root), Center, Vector2.zero, new Vector2(920, 1020));
         AddImage(panel, Panel);
+        FitPopup(panel);
         fp.titleText = Text("Title", panel, "BOT FACTORY", 68, Accent, Top, new Vector2(0, -95), new Vector2(760, 100));
         fp.infoText = Text("Info", panel, "", 36, Muted, Top, new Vector2(0, -175), new Vector2(840, 70), FontStyles.Normal);
         fp.closeButton = Btn("Close", panel, "X", Red, new Vector2(1, 1), new Vector2(-75, -75), new Vector2(110, 110), 56);
@@ -239,6 +240,7 @@ public static class TrashGameBuilder
 
         var panel = Place(NewRect("Panel", root), Center, Vector2.zero, new Vector2(960, 1460));
         AddImage(panel, Panel);
+        FitPopup(panel);
         bp.titleText = Text("Title", panel, "SCOUT BOT", 64, Accent, Top, new Vector2(0, -90), new Vector2(760, 100));
         bp.statusText = Text("Status", panel, "", 36, Muted, Top, new Vector2(0, -165), new Vector2(860, 60), FontStyles.Normal);
         bp.closeButton = Btn("Close", panel, "X", Red, new Vector2(1, 1), new Vector2(-75, -75), new Vector2(110, 110), 56);
@@ -285,6 +287,15 @@ public static class TrashGameBuilder
         di.body = body; di.label = labelImg; di.nameText = nt;
         rt.gameObject.SetActive(false);
         return di;
+    }
+
+    // keeps the (portrait-sized) popups inside a landscape screen: scaled down, never up
+    static void FitPopup(RectTransform panel)
+    {
+        var fit = panel.gameObject.AddComponent<FitToSafeArea>();
+        fit.designSize = panel.sizeDelta;
+        fit.maxScale = 1f;
+        fit.margin = 24f;
     }
 
     // =====================================================================

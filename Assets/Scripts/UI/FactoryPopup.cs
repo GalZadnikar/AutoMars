@@ -69,9 +69,10 @@ public class FactoryPopup : MonoBehaviour
         if (factory == null) return;
         count = Mathf.Clamp(count, 0, Max);
         int have = Economy.Instance != null ? Economy.Instance.materials : 0;
-        infoText.text = "Scout Bot  ·  " + factory.costPerBot + " materials  ·  " + Mathf.RoundToInt(factory.buildTime) + "s each";
+        int lvl = factory.Upgrades != null ? factory.Upgrades.Level : 1;
+        infoText.text = "Scout Bot Lv " + lvl + "  ·  " + factory.CostPerBot + " materials  ·  " + Mathf.RoundToInt(factory.BuildTime) + "s each";
         countText.text = count.ToString();
-        totalText.text = "Total: " + (count * factory.costPerBot) + " materials";
+        totalText.text = "Total: " + (count * factory.CostPerBot) + " materials";
         haveText.text = "You have: " + have;
         queueText.text = factory.Queued > 0
             ? "In production: " + factory.Queued + "  (next in " + Mathf.CeilToInt(factory.TimeLeft) + "s)"

@@ -11,6 +11,7 @@ public class WorldButton : MonoBehaviour
 
     Transform target;
     Vector3 offset;
+    Vector2 screenOffset;
     Action onClick;
     RectTransform rt;
     Camera cam;
@@ -26,11 +27,13 @@ public class WorldButton : MonoBehaviour
         button.onClick.AddListener(() => onClick?.Invoke());
     }
 
-    public void Show(Transform worldTarget, Vector3 worldOffset, Action click)
+    /// screenOffset (canvas units) lets two buttons sit side by side over the same building.
+    public void Show(Transform worldTarget, Vector3 worldOffset, Action click, Vector2 screenOffset = default)
     {
         Init();
         target = worldTarget;
         offset = worldOffset;
+        this.screenOffset = screenOffset;
         onClick = click;
         if (!gameObject.activeSelf)
         {
@@ -58,7 +61,7 @@ public class WorldButton : MonoBehaviour
         Vector3 sp = cam.WorldToScreenPoint(target.position + offset);
         var parent = (RectTransform)rt.parent;
         if (RectTransformUtility.ScreenPointToLocalPointInRectangle(parent, sp, null, out var lp))
-            rt.localPosition = lp;
+            rt.localPosition = lp + screenOffset;
 
         appear = Mathf.MoveTowards(appear, 1f, Time.unscaledDeltaTime * 5f);
         float s = appear < 1f ? EaseOutBack(appear) : 1f + Mathf.Sin(Time.unscaledTime * 4f) * 0.04f;

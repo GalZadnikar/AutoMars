@@ -1,0 +1,154 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9f68bf3ecb8144a72b68d76e0be24c55, type: 3}
+  m_Name: GathererFactory_Tree
+  m_EditorClassIdentifier: Assembly-CSharp::BuildingUpgradeTree
+  displayName: Gatherer Factory
+  category: Production Building
+  outputName: Scout Bot
+  levelCosts: 1e0000003c00000078000000c800000040010000
+  perLevel:
+  - stat: 0
+    op: 1
+    value: 5
+  - stat: 1
+    op: 0
+    value: 1
+  - stat: 2
+    op: 1
+    value: 5
+  masterDiskUnlockLevel: 4
+  tiers:
+  - options:
+    - title: Servo Legs
+      flavor: Faster trips to far-off piles.
+      glyph: SPD
+      icon: {fileID: 0}
+      mods:
+      - stat: 0
+        op: 1
+        value: 25
+    - title: Cargo Rack
+      flavor: More trash per trip.
+      glyph: CAP
+      icon: {fileID: 0}
+      mods:
+      - stat: 1
+        op: 1
+        value: 50
+  - options:
+    - title: Quick Grabbers
+      flavor: Fill up faster at the pile.
+      glyph: GRB
+      icon: {fileID: 0}
+      mods:
+      - stat: 2
+        op: 1
+        value: 40
+    - title: Assembly Line
+      flavor: The factory builds faster.
+      glyph: BLD
+      icon: {fileID: 0}
+      mods:
+      - stat: 4
+        op: 1
+        value: -25
+    - title: Bulk Discount
+      flavor: Cheaper bots.
+      glyph: $
+      icon: {fileID: 0}
+      mods:
+      - stat: 5
+        op: 1
+        value: -30
+  - options:
+    - title: Overdrive Motors
+      flavor: 
+      glyph: OVR
+      icon: {fileID: 0}
+      mods:
+      - stat: 0
+        op: 1
+        value: 20
+    - title: Compact Stacking
+      flavor: 
+      glyph: STK
+      icon: {fileID: 0}
+      mods:
+      - stat: 1
+        op: 0
+        value: 2
+    - title: Dump Chute
+      flavor: Unload at the base in a blink.
+      glyph: DMP
+      icon: {fileID: 0}
+      mods:
+      - stat: 3
+        op: 1
+        value: 100
+  - options:
+    - title: Heavy Lifter
+      flavor: Big loads, slower legs.
+      glyph: HVY
+      icon: {fileID: 0}
+      mods:
+      - stat: 1
+        op: 0
+        value: 4
+      - stat: 0
+        op: 1
+        value: -10
+    - title: Twin Arms
+      flavor: Grab and drop faster.
+      glyph: ARM
+      icon: {fileID: 0}
+      mods:
+      - stat: 2
+        op: 1
+        value: 35
+      - stat: 3
+        op: 1
+        value: 35
+  - options:
+    - title: Turbo Core
+      flavor: 'Overclock: blazing fast, small backpack.'
+      glyph: TRB
+      icon: {fileID: 0}
+      mods:
+      - stat: 0
+        op: 1
+        value: 45
+      - stat: 1
+        op: 0
+        value: -2
+    - title: Mega Hauler
+      flavor: 'Overclock: double load, heavy steps.'
+      glyph: MEG
+      icon: {fileID: 0}
+      mods:
+      - stat: 1
+        op: 1
+        value: 100
+      - stat: 0
+        op: 1
+        value: -20
+    - title: Mass Production
+      flavor: 'Overclock: churn out bots.'
+      glyph: MAS
+      icon: {fileID: 0}
+      mods:
+      - stat: 4
+        op: 1
+        value: -40
+      - stat: 5
+        op: 1
+        value: -20

@@ -27,10 +27,17 @@ public class BotFactory : MonoBehaviour
     public GroundRing ring;
     public string idleText = "Bot Factory";
 
-    public int Queued { get; private set; }
-    public float TimeLeft => Mathf.Max(0f, buildTime - timer);
-    public float Progress => Queued > 0 ? timer / buildTime : 0f;
-    public int MaxAffordable => Economy.Instance != null ? Economy.Instance.materials / Mathf.Max(1, costPerBot) : 0;
+    /// Level + perk tree of this factory (optional component on the same object).
+    public BuildingUpgrades Upgrades { get; private set; }
+    /// Cost / build time after upgrades. Use these instead of the raw fields.
+    public int CostPerBot => Upgrades != null ? Upgrades.Current.Int(StatType.BotCost) : costPerBot;
+    public float BuildTime => Upgrades != null ? Mathf.Max(0.5f, Upgrades.Current[StatType.BuildTime]) : buildTime;
+
+    
+public int Queued { get; private set; }
+    public float TimeLeft => Mathf.Max(0f, BuildTime - timer);
+    public float Progress => Queued > 0 ? timer / BuildTime : 0f;
+    public int MaxAffordable => Economy.Instance != null ? Economy.Instance.materials / Mathf.Max(1, CostPerBot) : 0;
 
     int built;
     float timer;
@@ -40,6 +47,7 @@ public class BotFactory : MonoBehaviour
     void Awake()
     {
         Instance = this;
+        Upgrades = GetComponent<BuildingUpgrades>();
         if (body != null) bodyScale = body.localScale;
     }
 
@@ -55,7 +63,7 @@ public class BotFactory : MonoBehaviour
     public bool Order(int count)
     {
         if (count <= 0 || Economy.Instance == null) return false;
-        if (!Economy.Instance.TrySpend(count * costPerBot)) return false;
+        if (!Economy.Instance.TrySpend(count * CostPerBot)) return false;
         Queued += count;
         return true;
     }
@@ -65,7 +73,7 @@ public class BotFactory : MonoBehaviour
         if (Queued > 0)
         {
             timer += Time.deltaTime;
-            if (timer >= buildTime)
+            if (timer >= BuildTime)
             {
                 timer = 0f;
                 Queued--;
@@ -100,7 +108,11 @@ public class BotFactory : MonoBehaviour
         built++;
         go.name = "Scout Bot " + built;
         var bot = go.GetComponent<ScoutBot>();
-        if (bot != null) bot.Init(RallyPoint(built - 1), built);
+        if (bot != null)
+        {
+            bot.Init(RallyPoint(built - 1), built);
+            if (Upgrades != null) bot.ApplyStats(Upgrades.Current);   // bots keep what they were built with
+        }
     }
 
     public Vector3 RallyPoint(int index)
