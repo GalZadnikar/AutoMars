@@ -30,6 +30,8 @@ public class ScoutBot : MonoBehaviour
     public float carryItemScale = 0.6f;
     public float carrySpacing = 0.24f;
     public TMP_Text statusLabel;
+    [Tooltip("[Lv N] tag, shown only near the player (ProximityTags)")]
+    public BotLevelTag levelTag;
 
     [Header("Animator states")]
     public string idleState = "01_Scout_Bot_Idle";

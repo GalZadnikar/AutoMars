@@ -37,7 +37,7 @@ public class BotProgramPopup : MonoBehaviour
         gameObject.SetActive(true);
         transform.SetAsLastSibling();
         UIState.ModalOpen = true;
-        titleText.text = bot.BotName.ToUpper();
+        titleText.text = bot.BotName.ToUpper() + "  <color=#" + ColorUtility.ToHtmlStringRGB(BotLevelTag.LevelColor(bot.Level)) + ">LV " + bot.Level + "</color>";
         Rebuild();
     }
 
