@@ -1,11 +1,27 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-/// Editor helper: generates the look of a pile (big heap + a few small heaps around it)
-/// from WasteOvergrowth prefabs. Right-click the component > "Build Pile" after changing settings.
+/// Generates the look of a pile (big heap + a few small heaps around it) from WasteOvergrowth prefabs.
+/// DYNAMIC MODE (Auto Size): set Radius (how big the pile is, the whole area it covers) and Amount (how much trash is in it).
+/// The heap height, number of bags / boxes and small heaps are worked out to fill that sphere: a big radius gives a big pile,
+/// and Amount decides how densely it is packed. The pile is generated when you drop the prefab in the scene, and again
+/// whenever you change Radius / Amount (use "Rebuild Pile" after moving it or to re-roll). A prefab spawned from code builds itself in Awake.
+/// Manual mode (Auto Size off): the heap / piece fields below are used as they are. Right-click > "Build Pile".
+[DefaultExecutionOrder(-10)]   // before TrashPile.Awake collects the pieces
 [RequireComponent(typeof(TrashPile))]
 public class TrashPileBuilder : MonoBehaviour
 {
+    [Header("Dynamic pile")]
+    [Tooltip("On: Amount decides the size of the pile (the heap / piece fields below are filled in automatically)")]
+    public bool autoSize = false;
+    [Tooltip("Size of the pile: the radius of the area it covers, in metres (the cyan sphere in the Scene view)")]
+    [Min(1f)] public float radius = 3.6f;
+    [Tooltip("How much trash this pile holds (also its Max Amount). More trash = packed denser, fewer = sparser")]
+    public int amount = 100;
+    [Tooltip("Auto Size: a different look for every position (turn off to keep the Seed below)")]
+    public bool seedFromPosition = true;
+
+    [Header("Look (filled in by Auto Size)")]
     public int seed = 1;
     public float heapRadius = 2.2f;
     public float heapHeight = 1.6f;
@@ -18,14 +34,65 @@ public class TrashPileBuilder : MonoBehaviour
     public GameObject[] smallMounds;     // small heap meshes
     public GameObject[] pieces;          // bags, boxes...
 
+    bool flat;
+    float flatY;
+    float Ground(Vector3 p, float fallback) => flat ? flatY : GroundUtil.Height(p, fallback);
+
     System.Random rnd;
     float R(float a, float b) => a + (float)rnd.NextDouble() * (b - a);
     T Pick<T>(T[] arr) => arr[rnd.Next(arr.Length)];
+
+    // calibrated on the hand-made piles (heap 2 m / 14 pieces / 3 heaps at radius 3.6 and 100 trash)
+    const float HeapPerRadius = 0.55f;      // the main heap fills ~55% of the radius, the small heaps sit around it
+    const float HeightPerRadius = 0.42f;
+
+    /// Amount a pile of this radius looks 'normal full' with (more = denser, less = sparser).
+    public static float NormalAmountFor(float radius) => 7.6f * radius * radius;
+
+    void ApplyAutoSize()
+    {
+        radius = Mathf.Max(1f, radius);
+        heapRadius = radius * HeapPerRadius;
+        heapHeight = radius * HeightPerRadius;
+        float density = Mathf.Clamp(Mathf.Sqrt(Mathf.Max(1, amount) / NormalAmountFor(radius)), 0.5f, 1.6f);
+        pieceCount = Mathf.Clamp(Mathf.RoundToInt(5f * Mathf.Pow(heapRadius, 1.5f) * density), 3, 200);
+        satelliteCount = Mathf.Clamp(Mathf.RoundToInt(1.5f * Mathf.Pow(heapRadius, 0.8f)), 1, 12);
+        if (seedFromPosition)
+        {
+            var pos = transform.position;
+            seed = Mathf.Abs(Mathf.RoundToInt(pos.x * 73.1f + pos.z * 179.7f)) + 1;
+        }
+    }
+
+    void Awake()
+    {
+        // spawned from code: generate before the pile collects its parts
+        var pile = GetComponent<TrashPile>();
+        if (Application.isPlaying && autoSize && (pile.visualRoot == null || pile.visualRoot.childCount == 0)) Build();
+    }
+
+    /// True when there is nothing generated yet.
+    public bool IsEmpty { get { var pile = GetComponent<TrashPile>(); return pile.visualRoot == null || pile.visualRoot.childCount == 0; } }
+
+    void OnDrawGizmosSelected()
+    {
+        // the sphere the pile will fill
+        float r = autoSize ? radius : heapRadius * 1.9f;
+        Gizmos.color = new Color(0.3f, 0.9f, 1f, 0.9f);
+        Gizmos.DrawWireSphere(transform.position + Vector3.up * (r * 0.3f), r);
+    }
 
     [ContextMenu("Build Pile")]
     public void Build()
     {
         var pile = GetComponent<TrashPile>();
+        if (autoSize)
+        {
+            amount = Mathf.Max(1, amount);
+            pile.maxAmount = amount;
+            pile.amount = amount;
+            ApplyAutoSize();
+        }
         rnd = new System.Random(seed);
 
         var root = pile.visualRoot;
@@ -37,8 +104,13 @@ public class TrashPileBuilder : MonoBehaviour
         }
         for (int i = root.childCount - 1; i >= 0; i--) DestroyImmediate(root.GetChild(i).gameObject);
 
+        // Level Ground on: the ground under the pile will be one flat pad, so build everything on that height
+        flat = pile.levelGround;
+        flatY = 0f;
+        if (flat) flatY = GroundLeveler.PadHeightRound(transform.position, pile.LevelRadius);
+
         Vector3 c = transform.position;
-        float groundC = GroundUtil.Height(c, c.y);
+        float groundC = Ground(c, c.y);
         transform.position = new Vector3(c.x, groundC, c.z);
         c = transform.position;
 
@@ -58,7 +130,7 @@ public class TrashPileBuilder : MonoBehaviour
             var p = c + new Vector3(Mathf.Cos(ang) * d, 0, Mathf.Sin(ang) * d);
             float k = d / heapRadius;
             float surface = c.y + heapHeight * (1f - k * k) * 0.8f;
-            p.y = Mathf.Max(GroundUtil.Height(p, c.y), surface);
+            p.y = Mathf.Max(Ground(p, c.y), surface);
             float s = R(pieceScale.x, pieceScale.y);
             var tilt = Quaternion.Euler(R(-20, 20), R(0, 360), R(-20, 20));
             PlacePiece(root, "Piece_" + i, Pick(pieces), p, s, tilt);
@@ -71,7 +143,7 @@ public class TrashPileBuilder : MonoBehaviour
             float ang = a0 + j * Mathf.PI * 2 / Mathf.Max(1, satelliteCount) + R(-0.5f, 0.5f);
             float dist = heapRadius * R(1.4f, 1.8f);
             var p = c + new Vector3(Mathf.Cos(ang) * dist, 0, Mathf.Sin(ang) * dist);
-            p.y = GroundUtil.Height(p, c.y);
+            p.y = Ground(p, c.y);
             var sat = new GameObject("Satellite_" + j).transform;
             sat.SetParent(root, false);
             sat.position = p;
@@ -82,7 +154,7 @@ public class TrashPileBuilder : MonoBehaviour
             for (int e = 0; e < extra; e++)
             {
                 var q = p + new Vector3(R(-r, r) * 0.6f, 0, R(-r, r) * 0.6f);
-                q.y = GroundUtil.Height(q, p.y) + 0.1f;
+                q.y = Ground(q, p.y) + 0.1f;
                 PlacePiece(sat, "Piece", Pick(pieces), q, R(pieceScale.x, pieceScale.y) * 0.8f,
                            Quaternion.Euler(R(-15, 15), R(0, 360), R(-15, 15)));
             }

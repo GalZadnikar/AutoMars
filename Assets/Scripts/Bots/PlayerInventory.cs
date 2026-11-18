@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 /// Disks the player is holding.
@@ -15,11 +16,33 @@ public class PlayerInventory : MonoBehaviour
     [Header("Batteries (dedicated slots)")]
     public int batterySlots = 6;
     public List<BatteryItem> batteries = new List<BatteryItem>();
-    public bool HasBatterySpace => batteries.Count < batterySlots;
+    /// Identical batteries share one slot (shown as "x2"), so slots count distinct batteries.
+    public int BatterySlotsUsed => batteries.Distinct().Count();
+    public bool HasBatterySpace => BatterySlotsUsed < batterySlots;
+
+    public int CountOf(BatteryItem b) => batteries.Count(x => x == b);
+    public int CountOf(DiskProgram d) => disks.Count(x => x == d);
+
+    /// Batteries grouped by kind, in order of first pickup: one entry per slot.
+    public List<(BatteryItem item, int count)> BatteryStacks()
+    {
+        var list = new List<(BatteryItem, int)>();
+        foreach (var b in batteries.Distinct()) list.Add((b, CountOf(b)));
+        return list;
+    }
+
+    /// Disks grouped by program, in order of first pickup.
+    public List<(DiskProgram item, int count)> DiskStacks()
+    {
+        var list = new List<(DiskProgram, int)>();
+        foreach (var d in disks.Distinct()) list.Add((d, CountOf(d)));
+        return list;
+    }
 
     public bool AddBattery(BatteryItem b)
     {
-        if (b == null || !HasBatterySpace) return false;
+        if (b == null) return false;
+        if (!batteries.Contains(b) && !HasBatterySpace) return false;   // stacking onto an owned kind needs no free slot
         batteries.Add(b);
         OnChanged?.Invoke();
         return true;

@@ -28,6 +28,22 @@ public class BuildCard : MonoBehaviour
         infoText.text = size + (string.IsNullOrEmpty(def.description) ? "" : "\n" + def.description);
     }
 
+    /// A card that isn't a building (e.g. the base's PIPE LENGTH upgrade).
+    public void SetupCustom(string glyphText, Color color, Action tap)
+    {
+        onTap = tap;
+        icon.color = color;
+        glyph.text = glyphText;
+    }
+
+    public void SetTexts(string title, string info, string cost, Color costColor)
+    {
+        nameText.text = title;
+        infoText.text = info;
+        costText.text = cost;
+        costText.color = costColor;
+    }
+
     public void SetCost(int cost, bool affordable)
     {
         costText.text = cost + " MATERIALS";

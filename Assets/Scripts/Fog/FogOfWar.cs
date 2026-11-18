@@ -163,7 +163,7 @@ public class FogOfWar : MonoBehaviour
             for (int i = 0; i < list.Count; i++)
             {
                 var r = list[i];
-                if (r != null && r.isActiveAndEnabled) Stamp(r.transform.position, r.radius);
+                if (r != null && r.isActiveAndEnabled) Stamp(visible, r.transform.position, r.radius);
             }
         }
 
@@ -185,7 +185,7 @@ public class FogOfWar : MonoBehaviour
         PushGlobals();
     }
 
-    void Stamp(Vector3 pos, float radius)
+    void Stamp(byte[] grid, Vector3 pos, float radius)
     {
         if (radius <= 0f) return;
         Vector2 o = Origin;
@@ -210,7 +210,7 @@ public class FogOfWar : MonoBehaviour
                 float t = (radius - Mathf.Sqrt(d2)) / soft;          // 0 at the rim, 1 inside
                 byte b = t >= 1f ? (byte)255 : (byte)(t * t * (3f - 2f * t) * 255f);
                 int i = row + x;
-                if (b > visible[i]) visible[i] = b;
+                if (b > grid[i]) grid[i] = b;
             }
         }
     }
@@ -238,6 +238,16 @@ public class FogOfWar : MonoBehaviour
         }
         minimapTex.SetPixels32(minimapPx);
         minimapTex.Apply(false, false);
+    }
+
+    /// Marks a circle as explored for good (the soft edge is the same as a vision circle), without it being
+    /// 'visible now': it shows as dimmed ground, not black fog. Used when something with a zone circle gets seen.
+    public void RevealExplored(Vector3 pos, float radius)
+    {
+        if (explored == null) return;
+        Stamp(explored, pos, radius);
+        minimapDirty = true;
+        exploredDirty = true;   // the next refresh (a few times per second) uploads it
     }
 
     // ------------------------------------------------------------------ queries

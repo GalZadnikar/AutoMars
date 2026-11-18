@@ -22,29 +22,31 @@ public class BatteryCard : MonoBehaviour
         if (icon != null) batterySprite = icon.sprite;   // remember the default icon (cards are reused for disks)
     }
 
-    public void Setup(BatteryItem item, Action tap)
+    public void Setup(BatteryItem item, Action tap, int count = 1)
     {
         onTap = tap;
         var c = item.Color;
         if (batterySprite != null) icon.sprite = batterySprite;
         stripe.color = c;
         icon.color = c;
-        nameText.text = item.displayName.ToUpper();
+        nameText.text = item.displayName.ToUpper() + CountSuffix(count);
         nameText.color = c;
         runtimeText.text = Stats.Clock(item.runtimeSeconds) + "  RUNTIME";
     }
 
     /// Same card for other slot items (e.g. Master Disk programs).
-    public void SetupCustom(string title, string subtitle, Color color, Sprite iconSprite, Action tap)
+    public void SetupCustom(string title, string subtitle, Color color, Sprite iconSprite, Action tap, int count = 1)
     {
         onTap = tap;
         stripe.color = color;
         if (iconSprite != null) icon.sprite = iconSprite;
         icon.color = color;
-        nameText.text = title.ToUpper();
+        nameText.text = title.ToUpper() + CountSuffix(count);
         nameText.color = color;
         runtimeText.text = subtitle;
     }
+
+    static string CountSuffix(int count) => count > 1 ? "  x" + count : "";
 
     public void SetSelected(bool on)
     {

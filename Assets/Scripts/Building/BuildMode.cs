@@ -7,23 +7,30 @@ using UnityEngine.UI;
 using UnityEngine.InputSystem;
 #endif
 
-/// Base construction. BUILD → the player stops, the camera goes top-down over a build cursor and the
-/// joystick moves that cursor (WASD in the Editor). Pick a building → its blueprint snaps to the grid at
-/// the cursor → ROTATE / PLACE / CANCEL. Placing flattens the ground under it and starts a construction
-/// site that finishes after the building's build time.
+/// Base construction. Stand at the base and tap its floating BASE button → a popup lists the buildings.
+/// Pick one → the player stops, the camera goes top-down over a build cursor and the joystick moves that
+/// cursor (WASD in the Editor) → its blueprint snaps to the grid → ROTATE / PLACE / BACK (back = the popup).
+/// Placing flattens the ground under it and starts a construction site that finishes after the building's build time.
 public class BuildMode : MonoBehaviour
 {
     /// Debug: building costs nothing.
     public static bool FreeBuild;
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ResetStatics() { FreeBuild = false; }
+
     public List<BuildingDef> catalog = new List<BuildingDef>();
 
-    [Header("UI")]
-    public Button buildButton;
-    public GameObject catalogPanel;
+    [Header("Base popup (opened from the BASE button at the base)")]
+    public GameObject menuPanel;
+    public Button menuCloseButton, menuBackdrop;
+    public TMP_Text menuMaterialsText;
     public RectTransform cardRow;
+    [Tooltip("Row for the base upgrade cards (pipe length)")]
+    public RectTransform upgradeRow;
     public BuildCard cardTemplate;
-    public Button exitButton;
+
+    [Header("Placement UI")]
     public GameObject placePanel;
     public TMP_Text placeTitle, placeStatus, hintText;
     public Button rotateButton, cancelButton, placeButton;
@@ -44,6 +51,7 @@ public class BuildMode : MonoBehaviour
     public float levelMargin = 2.5f;
 
     readonly List<BuildCard> cards = new List<BuildCard>();
+    BuildCard pipeCard;
     readonly Dictionary<Vector2Int, BuildGrid.CellState> states = new Dictionary<Vector2Int, BuildGrid.CellState>();
     BuildingDef current;
     GameObject ghost;
@@ -64,10 +72,10 @@ public class BuildMode : MonoBehaviour
 
     void Start()
     {
-        buildButton.onClick.AddListener(Enter);
-        exitButton.onClick.AddListener(Exit);
+        menuCloseButton.onClick.AddListener(CloseMenu);
+        if (menuBackdrop != null) menuBackdrop.onClick.AddListener(CloseMenu);
         rotateButton.onClick.AddListener(() => { rot = (rot + 1) & 3; dirty = true; });
-        cancelButton.onClick.AddListener(CancelPlacement);
+        cancelButton.onClick.AddListener(Back);
         placeButton.onClick.AddListener(Place);
 
         foreach (var def in catalog)
@@ -76,8 +84,15 @@ public class BuildMode : MonoBehaviour
             var c = Instantiate(cardTemplate, cardRow);
             c.gameObject.SetActive(true);
             var d = def;
-            c.Setup(def, () => Select(d));
+            c.Setup(def, () => Begin(d));
             cards.Add(c);
+        }
+
+        if (upgradeRow != null && cardTemplate != null)
+        {
+            pipeCard = Instantiate(cardTemplate, upgradeRow);
+            pipeCard.gameObject.SetActive(true);
+            pipeCard.SetupCustom("P", WorkshopTheme.Cyan, PipeUpgrade);
         }
 
         var ov = new GameObject("Build Grid Overlay", typeof(MeshFilter), typeof(MeshRenderer));
@@ -109,14 +124,39 @@ public class BuildMode : MonoBehaviour
 
     void ShowNothing()
     {
-        catalogPanel.SetActive(false);
+        menuPanel.SetActive(false);
         placePanel.SetActive(false);
         hintText.gameObject.SetActive(false);
     }
 
-    public void Enter()
+    /// The BASE button calls this: the popup with the buildings.
+    public void OpenMenu()
     {
-        if (UIState.ModalOpen) return;
+        if (UIState.ModalOpen || UIState.BuildMode) return;
+        menuPanel.SetActive(true);
+        menuPanel.transform.SetAsLastSibling();
+        UIState.ModalOpen = true;
+        refreshT = 0f;
+        RefreshMenu();
+    }
+
+    public void CloseMenu()
+    {
+        if (!menuPanel.activeSelf) return;
+        menuPanel.SetActive(false);
+        UIState.ModalOpen = false;
+    }
+
+    // popup card tapped: leave the popup, switch to the top-down view and start placing
+    void Begin(BuildingDef def)
+    {
+        CloseMenu();
+        EnterBuild();
+        Select(def);
+    }
+
+    void EnterBuild()
+    {
         UIState.BuildMode = true;
         BuildGrid.RefreshItems();
 
@@ -133,10 +173,7 @@ public class BuildMode : MonoBehaviour
         }
 
         if (zoomSlider != null) zoomSlider.SetActive(false);
-        catalogPanel.SetActive(true);
-        placePanel.SetActive(false);
         hintText.gameObject.SetActive(true);
-        hintText.text = "Joystick moves the view. Pick a building.";
         refreshT = 0f;
         dirty = true;
     }
@@ -166,19 +203,16 @@ public class BuildMode : MonoBehaviour
                 for (int i = 0; i < mats.Length; i++) mats[i] = ghostMat;
                 r.sharedMaterials = mats;
             }
-        catalogPanel.SetActive(false);
         placePanel.SetActive(true);
         hintText.text = "Joystick moves the building. It snaps to the grid.";
         placeTitle.text = def.displayName.ToUpper();
     }
 
-    void CancelPlacement()
+    // BACK: leave build mode and go back to the base popup (pick another building or close it)
+    void Back()
     {
-        ClearGhost();
-        catalogPanel.SetActive(true);
-        placePanel.SetActive(false);
-        hintText.text = "Joystick moves the view. Pick a building.";
-        dirty = true;
+        Exit();
+        OpenMenu();
     }
 
     void ClearGhost()
@@ -192,20 +226,17 @@ public class BuildMode : MonoBehaviour
 
     void Update()
     {
-        bool showButton = !UIState.ModalOpen && !UIState.BuildMode;
-        if (buildButton.gameObject.activeSelf != showButton) buildButton.gameObject.SetActive(showButton);
+        // card costs / materials in the popup
+        if (menuPanel.activeSelf || UIState.BuildMode)
+        {
+            refreshT -= Time.unscaledDeltaTime;
+            if (refreshT <= 0f) { refreshT = 0.25f; RefreshMenu(); }
+        }
 
-        if (UIState.BuildMode && UIState.ModalOpen) Exit();   // a popup opened on top: leave build mode
+        if (UIState.BuildMode && UIState.ModalOpen) Exit();   // another popup opened on top: leave build mode
         if (!UIState.BuildMode) return;
 
         MoveCursor();
-
-        refreshT -= Time.unscaledDeltaTime;
-        if (refreshT <= 0f)
-        {
-            refreshT = 0.25f;
-            for (int i = 0; i < cards.Count && i < catalog.Count; i++) cards[i].SetCost(catalog[i].cost, Affordable(catalog[i]));
-        }
 
         // fog clears / loot gets picked up / a site finishes: re-check now and then
         recheckT -= Time.unscaledDeltaTime;
@@ -217,7 +248,39 @@ public class BuildMode : MonoBehaviour
         }
 
         if (current != null) UpdatePlacement();
-        else UpdateBrowseGrid();
+    }
+
+    void PipeUpgrade()
+    {
+        var pt = PipeTether.Instance;
+        if (pt != null) pt.UpgradeWithFeedback();
+        RefreshMenu();
+    }
+
+    void RefreshMenu()
+    {
+        var pt = PipeTether.Instance;
+        if (pipeCard != null)
+        {
+            pipeCard.gameObject.SetActive(pt != null);
+            if (pt != null)
+            {
+                string title = "PIPE LENGTH  LV " + pt.level;
+                if (pt.IsPumped)
+                    pipeCard.SetTexts("PORTABLE H2O PUMP", "Worn on your back\nGo anywhere", "EQUIPPED", WorkshopTheme.Muted);
+                else if (pt.NextIsPump)
+                    pipeCard.SetTexts(title, "Range " + Mathf.RoundToInt(pt.Range) + " m > no limit\nPortable H2O pump replaces the pipe",
+                        (BuildMode.FreeBuild ? "FREE (debug)" : pt.NextCost + " MATERIALS"), pt.CanAffordUpgrade ? WorkshopTheme.Yellow : WorkshopTheme.Red);
+                else if (pt.IsMaxLevel)
+                    pipeCard.SetTexts(title, "Range " + Mathf.RoundToInt(pt.Range) + " m\nFully upgraded", "MAX LEVEL", WorkshopTheme.Muted);
+                else
+                    pipeCard.SetTexts(title, "Range " + Mathf.RoundToInt(pt.Range) + " > " + Mathf.RoundToInt(pt.NextRange) + " m\nHow far you can walk",
+                        (BuildMode.FreeBuild ? "FREE (debug)" : pt.NextCost + " MATERIALS"), pt.CanAffordUpgrade ? WorkshopTheme.Yellow : WorkshopTheme.Red);
+            }
+        }
+        for (int i = 0; i < cards.Count && i < catalog.Count; i++) cards[i].SetCost(catalog[i].cost, Affordable(catalog[i]));
+        if (menuMaterialsText != null)
+            menuMaterialsText.text = "MATERIALS  " + (Economy.Instance != null ? Economy.Instance.materials : 0);
     }
 
     Vector3 CameraForward()
@@ -263,17 +326,6 @@ public class BuildMode : MonoBehaviour
 
     static bool Affordable(BuildingDef def) =>
         FreeBuild || (Economy.Instance != null && Economy.Instance.materials >= def.cost);
-
-    // no building picked yet: just show the grid around the cursor
-    void UpdateBrowseGrid()
-    {
-        var cell = BuildGrid.WorldToCell(cursor.position);
-        if (cell == lastBl && !dirty) return;
-        lastBl = cell;
-        dirty = false;
-        states.Clear();
-        overlay.Show(cell, Vector2Int.zero, states);
-    }
 
     void UpdatePlacement()
     {

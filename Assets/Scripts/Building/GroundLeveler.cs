@@ -8,7 +8,7 @@ public static class GroundLeveler
 {
     // every pad leveled this session; re-applied if the ground mesh gets regenerated
     static readonly List<Pad> applied = new List<Pad>();
-    static readonly List<GridFootprint> preplaced = new List<GridFootprint>();
+    static readonly List<Transform> preplaced = new List<Transform>();   // hand-placed things whose GroundRings need a redraw
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     static void ResetStatics()
@@ -22,8 +22,8 @@ public static class GroundLeveler
     {
         if (!Application.isPlaying || applied.Count == 0) return;
         Apply(applied, 2.5f);
-        foreach (var fp in preplaced)
-            if (fp != null) foreach (var ring in fp.GetComponentsInChildren<GroundRing>(true)) ring.Rebuild();
+        foreach (var tr in preplaced)
+            if (tr != null) foreach (var ring in tr.GetComponentsInChildren<GroundRing>(true)) ring.Rebuild();
     }
 
     /// Height the pad will get = average ground height over the footprint.
@@ -41,6 +41,38 @@ public static class GroundLeveler
         return sum / n;
     }
 
+    /// Same for a round pad: average ground height inside the circle.
+    public static float PadHeightRound(Vector3 center, float radius)
+    {
+        float sum = 0f;
+        int n = 0;
+        for (int i = 0; i <= 6; i++)
+            for (int j = 0; j <= 6; j++)
+            {
+                float ox = Mathf.Lerp(-radius, radius, i / 6f), oz = Mathf.Lerp(-radius, radius, j / 6f);
+                if (ox * ox + oz * oz > radius * radius) continue;
+                sum += GroundUtil.Height(new Vector3(center.x + ox, 0f, center.z + oz), center.y);
+                n++;
+            }
+        return n > 0 ? sum / n : center.y;
+    }
+
+    /// Levels the ground under a trash pile (round pad + soft border) and sets it on the pad. Called at scene start and for piles spawned later.
+    public static void LevelPile(TrashPile pile)
+    {
+        if (pile == null || pile.leveled) return;
+        pile.leveled = true;
+        float r = pile.LevelRadius;
+        var c = pile.transform.position;
+        var pad = new Pad { center = c, half = new Vector2(r, r), round = true, target = PadHeightRound(c, r) };
+        FlattenMany(new List<Pad> { pad }, 2.5f);
+        pile.transform.position = new Vector3(c.x, pad.target, c.z);
+        preplaced.Add(pile.transform);
+        LowPolyGround.Rebuilt -= Reapply;
+        LowPolyGround.Rebuilt += Reapply;
+        foreach (var ring in pile.GetComponentsInChildren<GroundRing>(true)) ring.Rebuild();
+    }
+
     /// Flattens ground inside the rect (centre ± half, world X/Z) to its average height. Returns that height.
     /// ignore = footprint of the thing being built (its cells may already be registered).
     public static float Flatten(Vector3 center, Vector2 half, float margin, GridFootprint ignore = null)
@@ -56,6 +88,15 @@ public static class GroundLeveler
         public Vector2 half;
         public GridFootprint owner;   // its own cells may be leveled
         public float target;
+        public bool round;            // circle of radius half.x instead of a rectangle
+    }
+
+    /// Pads baked in the editor (stored on the ground); applied when the ground mesh is built, not remembered for re-apply.
+    public static void ApplyBaked(List<LowPolyGround.BakedPad> baked, float margin)
+    {
+        var pads = new List<Pad>();
+        foreach (var b in baked) pads.Add(new Pad { center = b.center, half = b.half, round = b.round, target = b.target });
+        Apply(pads, margin);
     }
 
     /// One mesh pass + one collider re-bake for several pads (targets must be filled in).
@@ -103,9 +144,18 @@ public static class GroundLeveler
             float d = float.MaxValue;
             foreach (var pd in pads)
             {
-                float dx = Mathf.Max(Mathf.Abs(w.x - pd.center.x) - pd.half.x, 0f);
-                float dz = Mathf.Max(Mathf.Abs(w.z - pd.center.z) - pd.half.y, 0f);
-                float dd = Mathf.Sqrt(dx * dx + dz * dz);
+                float dd;
+                if (pd.round)
+                {
+                    float ex = w.x - pd.center.x, ez = w.z - pd.center.z;
+                    dd = Mathf.Max(Mathf.Sqrt(ex * ex + ez * ez) - pd.half.x, 0f);
+                }
+                else
+                {
+                    float dx = Mathf.Max(Mathf.Abs(w.x - pd.center.x) - pd.half.x, 0f);
+                    float dz = Mathf.Max(Mathf.Abs(w.z - pd.center.z) - pd.half.y, 0f);
+                    dd = Mathf.Sqrt(dx * dx + dz * dz);
+                }
                 if (dd < d) { d = dd; pad = pd; }
             }
             if (pad == null || d >= reach) continue;
@@ -133,31 +183,46 @@ public static class GroundLeveler
         GroundUtil.MarkChanged();
     }
 
-    /// At scene start: level the ground under every hand-placed building, set it on its pad, redraw its ring.
+    /// At scene start: level the ground under every hand-placed building and every trash pile with Level Ground on,
+    /// set them on their pads, redraw their rings.
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void LevelPreplaced()
     {
         var pads = new List<Pad>();
-        var owners = new List<GridFootprint>();
+        var movers = new List<Transform>();   // parallel to pads: what gets moved onto the pad
+        var piles = new List<TrashPile>();
         foreach (var fp in Object.FindObjectsByType<GridFootprint>(FindObjectsSortMode.None))
         {
             if (!fp.levelGround) continue;
+            if (fp.groundBaked && (fp.transform.position - fp.bakedPosition).sqrMagnitude < 0.0025f) continue;   // already leveled in the editor
             var dims = BuildGrid.Dims(fp.size, fp.QuarterTurns);
             var half = new Vector2(dims.x, dims.y) * BuildGrid.CellSize * 0.5f;
             var c = fp.Center;
             pads.Add(new Pad { center = c, half = half, owner = fp, target = PadHeight(c, half) });
-            owners.Add(fp);
+            movers.Add(fp.transform);
+            piles.Add(null);
+        }
+        foreach (var tp in Object.FindObjectsByType<TrashPile>(FindObjectsSortMode.None))
+        {
+            if (!tp.levelGround || tp.leveled) continue;
+            tp.leveled = true;
+            if (tp.groundBaked && (tp.transform.position - tp.bakedPosition).sqrMagnitude < 0.0025f) continue;   // already leveled in the editor
+            float r = tp.LevelRadius;
+            var c = tp.transform.position;
+            pads.Add(new Pad { center = c, half = new Vector2(r, r), round = true, target = PadHeightRound(c, r) });
+            movers.Add(tp.transform);
+            piles.Add(tp);
         }
         if (pads.Count == 0) return;
         FlattenMany(pads, 2.5f);
-        preplaced.AddRange(owners);
+        preplaced.AddRange(movers);
         LowPolyGround.Rebuilt -= Reapply;
         LowPolyGround.Rebuilt += Reapply;   // the Editor regenerates the ground right after loading
-        for (int i = 0; i < owners.Count; i++)
+        for (int i = 0; i < movers.Count; i++)
         {
-            var t = owners[i].transform;
-            t.position = new Vector3(t.position.x, pads[i].target, t.position.z);
-            foreach (var ring in owners[i].GetComponentsInChildren<GroundRing>(true)) ring.Rebuild();
+            var tr = movers[i];
+            tr.position = new Vector3(tr.position.x, pads[i].target, tr.position.z);
+            foreach (var ring in tr.GetComponentsInChildren<GroundRing>(true)) ring.Rebuild();
         }
     }
 

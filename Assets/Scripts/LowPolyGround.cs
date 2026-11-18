@@ -23,6 +23,18 @@ public class LowPolyGround : MonoBehaviour
     public int seed = 1;
     public bool addCollider = true;
 
+    /// Ground leveling baked in the editor (Tools > Trash Game > Bake Ground Leveling): applied every time the mesh is built,
+    /// so hand-placed buildings / trash piles don't have to be leveled when the game starts.
+    [System.Serializable]
+    public struct BakedPad
+    {
+        public Vector3 center;
+        public Vector2 half;
+        public bool round;
+        public float target;
+    }
+    [HideInInspector] public List<BakedPad> bakedPads = new List<BakedPad>();
+
     Mesh mesh;
 
     /// Fired after the mesh is (re)generated, so leveled building pads can be re-applied.
@@ -113,6 +125,8 @@ public class LowPolyGround : MonoBehaviour
             if (col == null) col = gameObject.AddComponent<MeshCollider>();
             col.sharedMesh = null; col.sharedMesh = mesh;
         }
+        if (bakedPads != null && bakedPads.Count > 0) GroundLeveler.ApplyBaked(bakedPads, 2.5f);
+        GroundUtil.MarkChanged();
         Rebuilt?.Invoke();
     }
 }

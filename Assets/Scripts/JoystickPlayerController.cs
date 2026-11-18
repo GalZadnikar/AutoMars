@@ -71,6 +71,7 @@ public class JoystickPlayerController : MonoBehaviour
 
         Vector3 velocity = move * moveSpeed;
         velocity.y = verticalVelocity;
+        if (PipeTether.Instance != null) velocity = PipeTether.Instance.ConstrainVelocity(transform.position, velocity, Time.deltaTime);   // pipe to the base: can't walk past its end
         controller.Move(velocity * Time.deltaTime);
 
         if (anim != null) anim.SetInteger(AnimationPar, moving ? 1 : 0);

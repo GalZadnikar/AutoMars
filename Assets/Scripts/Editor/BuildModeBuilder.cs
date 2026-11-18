@@ -7,7 +7,9 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// Module 7: grid-based base construction. Registers the existing buildings on the grid,
-/// makes placeable prefabs + catalog, builds the BUILD button / catalog / placement UI. Safe to re-run.
+/// makes placeable prefabs + catalog, builds the base popup / placement UI (opened from the BASE button at the base). Safe to re-run.
+/// The Recycler / Gatherer Factory prefabs are the source of truth once the scene's Base_Home / Bot Factory are instances of them:
+/// edit the model in the prefab (or as a prefab override and apply it); the builder only (re)creates a prefab from the scene object if none is linked.
 public static class BuildModeBuilder
 {
     const string PrefabFolder = "Assets/Prefabs/Buildings";
@@ -21,18 +23,17 @@ public static class BuildModeBuilder
         EnsureFolder(DefFolder);
 
         // 1. existing buildings occupy grid cells
-        var home = GameObject.Find("Home");
-        var factory = GameObject.Find("Bot Factory");
-        var charger = GameObject.Find("Charging Station");
+        var home = FindRoot("Base_Home") ?? FindRoot("Home");
+        var factory = FindRoot("Bot Factory");   // may be inactive
+        var charger = FindRoot("Charging Station");
         Footprint(home, new Vector2Int(4, 4), Vector2.zero);
         Footprint(factory, new Vector2Int(4, 4), Vector2.zero);
         Footprint(charger, new Vector2Int(3, 3), new Vector2(0f, -1f));
 
         // 2. placeable prefabs made from them
-        var chargerPrefab = MakePrefab(charger, "ChargingStation");
-        var recyclerPrefab = MakePrefab(home, "Recycler");
-        var factoryPrefab = MakePrefab(factory, "GathererFactory");
-        ResetFactoryPrefab(factoryPrefab);
+        var chargerPrefab = PrefabFor(charger, "ChargingStation");
+        var recyclerPrefab = PrefabFor(home, "Recycler");
+        var factoryPrefab = PrefabFor(factory, "GathererFactory");
 
         // 3. catalog
         var defs = new[]
@@ -58,7 +59,7 @@ public static class BuildModeBuilder
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
         AssetDatabase.SaveAssets();
-        Debug.Log("Build mode ready: tap BUILD (bottom right) in Play mode.");
+        Debug.Log("Build mode ready: walk up to the base in Play mode and tap its BASE button.");
     }
 
     // ------------------------------------------------------------------ camera
@@ -102,20 +103,47 @@ public static class BuildModeBuilder
     static void Footprint(GameObject go, Vector2Int size, Vector2 offset)
     {
         if (go == null) return;
-        var fp = go.GetComponent<GridFootprint>();
-        if (fp == null) fp = go.AddComponent<GridFootprint>();
+        if (go.GetComponent<GridFootprint>() != null) return;   // already set up (lives on the prefab now)
+        var fp = go.AddComponent<GridFootprint>();
         fp.size = size;
         fp.centerOffset = offset;
         EditorUtility.SetDirty(fp);
+    }
+
+    // root object by name, also when it is inactive (GameObject.Find skips those)
+    static GameObject FindRoot(string name)
+    {
+        foreach (var r in EditorSceneManager.GetActiveScene().GetRootGameObjects())
+            if (r.name == name) return r;
+        return null;
+    }
+
+    // the prefab the scene object is an instance of; otherwise (re)made from the scene object
+    static GameObject PrefabFor(GameObject sceneGo, string name)
+    {
+        string path = PrefabFolder + "/" + name + ".prefab";
+        var existing = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+        if (sceneGo != null && existing != null)
+        {
+            var src = PrefabUtility.GetCorrespondingObjectFromSource(sceneGo);
+            if (src != null && AssetDatabase.GetAssetPath(src) == path) return existing;   // linked: the prefab is the source of truth
+        }
+        var prefab = MakePrefab(sceneGo, name);
+        if (name == "GathererFactory") ResetFactoryPrefab(prefab);
+        return prefab != null ? prefab : existing;
     }
 
     static GameObject MakePrefab(GameObject sceneGo, string name)
     {
         if (sceneGo == null) { Debug.LogError("Missing scene building for " + name); return null; }
         string path = PrefabFolder + "/" + name + ".prefab";
-        var copy = Object.Instantiate(sceneGo);   // copy so the scene object stays a plain object
+        var copy = Object.Instantiate(sceneGo);   // copy so the scene object stays as it is
         copy.name = name;
+        copy.SetActive(true);
         copy.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+        // the pipe belongs to the home base only, not to every recycler
+        var pipe = copy.GetComponent<PipeTether>(); if (pipe != null) Object.DestroyImmediate(pipe);
+        var pp = copy.transform.Find("Pipe Point (Base)"); if (pp != null) Object.DestroyImmediate(pp.gameObject);
         var prefab = PrefabUtility.SaveAsPrefabAsset(copy, path);
         Object.DestroyImmediate(copy);
         return prefab;
@@ -229,23 +257,33 @@ public static class BuildModeBuilder
         var bm = root.gameObject.AddComponent<BuildMode>();
         var hex = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/UI/Generated/HexFill.png");
 
-        // BUILD button (bottom right, above the camera slider)
-        var bb = Btn("BuildButton", root, "BUILD", WorkshopTheme.Orange, WorkshopTheme.DarkText, 40, new Vector2(1f, 0f), new Vector2(-50f, 185f), new Vector2(230f, 96f), new Vector2(1f, 0f));
-        var sh = bb.gameObject.AddComponent<Shadow>(); sh.effectDistance = new Vector2(0, -6); sh.effectColor = new Color(0, 0, 0, 0.45f);
-        bm.buildButton = bb;
+        // ---------- base popup (opened from the BASE button floating over the base) ----------
+        var menu = NewRect("BasePopup", root);
+        Stretch(menu);
+        var dim = AddImage(menu, new Color(0f, 0f, 0f, 0.6f));   // blocks the world behind it
+        var backdrop = menu.gameObject.AddComponent<Button>();    // tap outside = close
+        backdrop.targetGraphic = dim;
+        backdrop.transition = Selectable.Transition.None;
+        bm.menuPanel = menu.gameObject;
+        bm.menuBackdrop = backdrop;
 
-        // ---------- catalog ----------
-        var cat = Panel("Catalog", root, new Vector2(1120f, 262f));
-        bm.catalogPanel = cat.gameObject;
-        Txt("Title", cat, -390, 12, 300, 52, "BUILD", 40, WorkshopTheme.Orange, TextAlignmentOptions.Left).characterSpacing = 4f;
-        Txt("Sub", cat, -60, 20, 420, 40, "Pick a building to place", 24, WorkshopTheme.Muted, TextAlignmentOptions.Left, FontStyles.Normal);
-        bm.exitButton = Btn("Exit", cat, "EXIT", WorkshopTheme.ButtonOff, Color.white, 30, new Vector2(0.5f, 1f), new Vector2(465f, -40f), new Vector2(170f, 60f), new Vector2(0.5f, 0.5f));
-        var row = R("Cards", cat, 0, 80, 1090, 168);
-        var hl = row.gameObject.AddComponent<HorizontalLayoutGroup>();
-        hl.spacing = 22; hl.childAlignment = TextAnchor.MiddleCenter;
-        hl.childControlWidth = false; hl.childControlHeight = false;
-        hl.childForceExpandWidth = false; hl.childForceExpandHeight = false;
-        bm.cardRow = row;
+        var cat = NewRect("Panel", menu);
+        cat.anchorMin = cat.anchorMax = cat.pivot = new Vector2(0.5f, 0.5f);
+        cat.anchoredPosition = Vector2.zero;
+        cat.sizeDelta = new Vector2(1180f, 566f);
+        AddImage(cat, new Color(0.10f, 0.086f, 0.067f, 0.97f));   // also swallows taps so the panel itself doesn't close
+        AddImage(R("Rule", cat, 0, 0, 1180, 5), WorkshopTheme.Orange, false);
+        Txt("Title", cat, -412, 14, 300, 52, "BASE", 42, WorkshopTheme.Orange, TextAlignmentOptions.Left).characterSpacing = 4f;
+        Txt("Sub", cat, -212, 68, 700, 40, "Upgrade the base or build on the map", 24, WorkshopTheme.Muted, TextAlignmentOptions.Left, FontStyles.Normal);
+        bm.menuMaterialsText = Txt("Materials", cat, 190, 20, 360, 44, "MATERIALS  0", 30, WorkshopTheme.Yellow, TextAlignmentOptions.Right);
+        bm.menuCloseButton = Btn("Close", cat, "CLOSE", WorkshopTheme.ButtonOff, Color.white, 30, new Vector2(0.5f, 1f), new Vector2(480f, -46f), new Vector2(170f, 60f), new Vector2(0.5f, 0.5f));
+
+        // section 1: base upgrades
+        Txt("UpgradesLabel", cat, -412, 112, 300, 34, "UPGRADES", 26, WorkshopTheme.Orange, TextAlignmentOptions.Left).characterSpacing = 3f;
+        bm.upgradeRow = CardRow("UpgradeCards", cat, 150);
+        // section 2: buildings
+        Txt("BuildLabel", cat, -412, 338, 300, 34, "BUILD", 26, WorkshopTheme.Orange, TextAlignmentOptions.Left).characterSpacing = 3f;
+        bm.cardRow = CardRow("Cards", cat, 376);
         bm.cardTemplate = CardTemplate(cat, hex);
 
         // ---------- placement ----------
@@ -255,22 +293,34 @@ public static class BuildModeBuilder
         bm.placeStatus = Txt("Status", place, -300, 70, 480, 84, "", 24, Color.white, TextAlignmentOptions.TopLeft, FontStyles.Normal);
         bm.placeStatus.enableAutoSizing = true; bm.placeStatus.fontSizeMin = 16; bm.placeStatus.fontSizeMax = 24;
         bm.rotateButton = Btn("Rotate", place, "ROTATE", WorkshopTheme.ButtonOff, Color.white, 28, new Vector2(0.5f, 1f), new Vector2(90f, -90f), new Vector2(160f, 116f), new Vector2(0.5f, 0.5f));
-        bm.cancelButton = Btn("Cancel", place, "CANCEL", WorkshopTheme.ButtonOff, Color.white, 28, new Vector2(0.5f, 1f), new Vector2(268f, -90f), new Vector2(160f, 116f), new Vector2(0.5f, 0.5f));
+        bm.cancelButton = Btn("Back", place, "BACK", WorkshopTheme.ButtonOff, Color.white, 28, new Vector2(0.5f, 1f), new Vector2(268f, -90f), new Vector2(160f, 116f), new Vector2(0.5f, 0.5f));
         bm.placeButton = Btn("Place", place, "PLACE", WorkshopTheme.ButtonGreen, Color.white, 38, new Vector2(0.5f, 1f), new Vector2(455f, -90f), new Vector2(190f, 124f), new Vector2(0.5f, 0.5f));
 
         // ---------- hint ----------
         var hintRt = NewRect("Hint", root);
         hintRt.anchorMin = hintRt.anchorMax = hintRt.pivot = new Vector2(0.5f, 0f);
-        hintRt.anchoredPosition = new Vector2(0f, 300f);   // above the catalog / placement panels
+        hintRt.anchoredPosition = new Vector2(0f, 210f);   // above the placement panel
         hintRt.sizeDelta = new Vector2(1300f, 50f);
         bm.hintText = AddText(hintRt, "Walk to move the blueprint. It snaps to the grid.", 30, Color.white);
         bm.hintText.outlineWidth = 0.25f;
         bm.hintText.outlineColor = new Color32(20, 15, 10, 255);
 
-        cat.gameObject.SetActive(false);
+        menu.gameObject.SetActive(false);
         place.gameObject.SetActive(false);
         hintRt.gameObject.SetActive(false);
         return bm;
+    }
+
+    // left-aligned row of cards (same inset as the panel's text)
+    static RectTransform CardRow(string name, Transform parent, float yTop)
+    {
+        var row = R(name, parent, 0, yTop, 1090, 168);
+        var hl = row.gameObject.AddComponent<HorizontalLayoutGroup>();
+        hl.spacing = 22; hl.childAlignment = TextAnchor.MiddleLeft;
+        hl.padding = new RectOffset(13, 0, 0, 0);
+        hl.childControlWidth = false; hl.childControlHeight = false;
+        hl.childForceExpandWidth = false; hl.childForceExpandHeight = false;
+        return row;
     }
 
     static RectTransform Panel(string name, Transform parent, Vector2 size)

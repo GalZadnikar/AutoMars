@@ -423,13 +423,17 @@ public class WorkshopScreen : MonoBehaviour
     BatteryItem InventoryBattery(int i)
     {
         var inv = PlayerInventory.Instance;
-        return inv != null && i >= 0 && i < inv.batteries.Count ? inv.batteries[i] : null;
+        if (inv == null) return null;
+        var stacks = inv.BatteryStacks();
+        return i >= 0 && i < stacks.Count ? stacks[i].item : null;
     }
 
     DiskProgram InventoryDisk(int i)
     {
         var inv = PlayerInventory.Instance;
-        return inv != null && i >= 0 && i < inv.disks.Count ? inv.disks[i] : null;
+        if (inv == null) return null;
+        var stacks = inv.DiskStacks();
+        return i >= 0 && i < stacks.Count ? stacks[i].item : null;
     }
 
     void OpenPicker(PickerMode mode)
@@ -494,7 +498,10 @@ public class WorkshopScreen : MonoBehaviour
     {
         var inv = PlayerInventory.Instance;
         bool disk = pickerMode == PickerMode.Disk;
-        int count = inv == null ? 0 : disk ? inv.disks.Count : inv.batteries.Count;
+        // identical items share one card ("x2"), so the picker lists stacks, not single items
+        var diskStacks = disk && inv != null ? inv.DiskStacks() : null;
+        var batStacks = !disk && inv != null ? inv.BatteryStacks() : null;
+        int count = disk ? (diskStacks != null ? diskStacks.Count : 0) : (batStacks != null ? batStacks.Count : 0);
         if (pickIndex >= count) pickIndex = -1;
 
         while (cards.Count < count) cards.Add(Instantiate(batteryCardTemplate, batteryGrid));
@@ -507,10 +514,10 @@ public class WorkshopScreen : MonoBehaviour
             System.Action tap = () => { pickIndex = ii; Refresh(); };
             if (disk)
             {
-                var p = inv.disks[i];
-                cards[i].SetupCustom(p.displayName, "AUTO-PROGRAM", p.color, diskIcon != null ? diskIcon.sprite : null, tap);
+                var p = diskStacks[i].item;
+                cards[i].SetupCustom(p.displayName, "AUTO-PROGRAM", p.color, diskIcon != null ? diskIcon.sprite : null, tap, diskStacks[i].count);
             }
-            else cards[i].Setup(inv.batteries[i], tap);
+            else cards[i].Setup(batStacks[i].item, tap, batStacks[i].count);
             cards[i].SetSelected(i == pickIndex);
         }
         batteryEmptyText.gameObject.SetActive(count == 0);

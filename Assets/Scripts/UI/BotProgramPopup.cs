@@ -155,7 +155,14 @@ public class BotProgramPopup : MonoBehaviour
     void Rebuild()
     {
         ClearIcons();
-        for (int i = 0; i < inventory.Count; i++) Make(inventory[i], inventoryGrid, false, i);
+        var shown = new HashSet<DiskProgram>();
+        for (int i = 0; i < inventory.Count; i++)
+        {
+            if (!shown.Add(inventory[i])) continue;   // identical disks stack into one icon ("x2")
+            int n = 0;
+            foreach (var d in inventory) if (d == inventory[i]) n++;
+            Make(inventory[i], inventoryGrid, false, i, n);
+        }
         if (slot != null)
         {
             var ic = Make(slot, robotSlot, true, -1);
@@ -165,12 +172,12 @@ public class BotProgramPopup : MonoBehaviour
         emptyText.gameObject.SetActive(inventory.Count == 0);
     }
 
-    DiskIcon Make(DiskProgram program, Transform parent, bool fromRobot, int index)
+    DiskIcon Make(DiskProgram program, Transform parent, bool fromRobot, int index, int count = 1)
     {
         var ic = Instantiate(iconTemplate, parent);
         ic.gameObject.SetActive(true);
         ((RectTransform)ic.transform).anchoredPosition = Vector2.zero;
-        ic.Setup(this, program, fromRobot, index);
+        ic.Setup(this, program, fromRobot, index, count);
         icons.Add(ic.gameObject);
         return ic;
     }

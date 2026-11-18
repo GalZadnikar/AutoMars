@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BuildingDef
   displayName: Charging Station
   description: 2 more charging pads
-  cost: 40
+  cost: 20
   buildTime: 5
   prefab: {fileID: 5023477997065148573, guid: 2614be67de4c041f99e21c7e681d5f92, type: 3}
   color: {r: 0.43529412, g: 0.827451, b: 0.93333334, a: 1}

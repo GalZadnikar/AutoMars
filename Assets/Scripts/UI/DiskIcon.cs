@@ -22,7 +22,9 @@ public class DiskIcon : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
     int homeIndex;
     Vector3 homeScale;
 
-    public void Setup(BotProgramPopup owner, DiskProgram disk, bool inRobot, int idx)
+    TMP_Text countText;
+
+    public void Setup(BotProgramPopup owner, DiskProgram disk, bool inRobot, int idx, int count = 1)
     {
         popup = owner;
         program = disk;
@@ -31,6 +33,32 @@ public class DiskIcon : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDrag
         group = GetComponent<CanvasGroup>();
         if (label != null) label.color = disk.color;
         if (nameText != null) nameText.text = disk.shortName;
+        SetCount(count);
+    }
+
+    /// "x2" badge in the bottom-right corner; the text object is created on first use.
+    void SetCount(int count)
+    {
+        if (count <= 1) { if (countText != null) countText.gameObject.SetActive(false); return; }
+        if (countText == null)
+        {
+            var go = new GameObject("Count", typeof(RectTransform));
+            go.transform.SetParent(transform, false);
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = rt.anchorMax = new Vector2(1f, 0f);
+            rt.pivot = new Vector2(1f, 0f);
+            rt.anchoredPosition = new Vector2(-4f, 4f);
+            rt.sizeDelta = new Vector2(60f, 30f);
+            countText = go.AddComponent<TextMeshProUGUI>();
+            countText.alignment = TextAlignmentOptions.BottomRight;
+            countText.fontSize = nameText != null ? nameText.fontSize : 22f;
+            countText.fontStyle = FontStyles.Bold;
+            countText.color = Color.white;
+            countText.raycastTarget = false;
+            if (nameText != null) countText.font = nameText.font;
+        }
+        countText.gameObject.SetActive(true);
+        countText.text = "x" + count;
     }
 
     public void OnBeginDrag(PointerEventData e)

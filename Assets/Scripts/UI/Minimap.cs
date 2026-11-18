@@ -37,6 +37,10 @@ public class Minimap : MonoBehaviour
     public Color botColor = new Color(0.70f, 0.70f, 0.75f);
     public Color chargerColor = new Color(0.45f, 0.90f, 1f);
     public Color deadBotColor = new Color(1f, 0.3f, 0.25f);
+    [Tooltip("Circle around the base = how far the pipe lets you walk (hidden once the portable pump replaces the pipe)")]
+    public bool showPipeRange = true;
+    public Color pipeRangeColor = new Color(1f, 0.6f, 0.2f, 0.9f);
+    public Color pipeRangeFill = new Color(1f, 0.6f, 0.2f, 0.07f);
 
     [Header("Icon sizes (canvas units)")]
     public float playerSize = 36f;
@@ -58,12 +62,13 @@ public class Minimap : MonoBehaviour
 
     RectTransform viewport, content, playerIcon, levelBorder;
     RawImage fogOverlay;
+    RectTransform rangeRing, rangeFill;
     Transform player;
     readonly Dictionary<Component, Marker> markers = new Dictionary<Component, Marker>();
     readonly List<Component> toRemove = new List<Component>();
     float nextSync;
 
-    static Sprite sCircle, sRoundFill, sRoundFrame, sArrow, sDiamond;
+    static Sprite sCircle, sRoundFill, sRoundFrame, sArrow, sDiamond, sRing;
 
     void Awake()
     {
@@ -113,6 +118,14 @@ public class Minimap : MonoBehaviour
             fogOverlay = fogGo.AddComponent<RawImage>();
             fogOverlay.raycastTarget = false;
             fogOverlay.enabled = false;
+        }
+
+        if (showPipeRange)
+        {
+            rangeFill = NewImage("PipeRangeFill", content, sCircle, pipeRangeFill).rectTransform;
+            rangeRing = NewImage("PipeRange", content, sRing, pipeRangeColor).rectTransform;
+            rangeFill.gameObject.SetActive(false);
+            rangeRing.gameObject.SetActive(false);
         }
 
         var pi = NewImage("PlayerIcon", content, sArrow, playerColor);
@@ -256,6 +269,20 @@ public class Minimap : MonoBehaviour
             }
         }
 
+        if (rangeRing != null)
+        {
+            var pt = PipeTether.Instance;
+            bool on = pt != null && pt.Active;
+            if (rangeRing.gameObject.activeSelf != on) { rangeRing.gameObject.SetActive(on); rangeFill.gameObject.SetActive(on); }
+            if (on)
+            {
+                Vector2 c = WorldToMap(pt.transform.position);
+                Vector2 size = Vector2.one * pt.Range * 2f * Scale;
+                rangeRing.anchoredPosition = rangeFill.anchoredPosition = c;
+                rangeRing.sizeDelta = rangeFill.sizeDelta = size;
+            }
+        }
+
         if (levelBorder != null)
         {
             levelBorder.anchoredPosition = (worldCenter - MapCenter) * Scale;
@@ -321,6 +348,7 @@ public class Minimap : MonoBehaviour
         if (sCircle != null) return;
         const float r = 0.45f; // corner radius in -1..1 space
         sCircle = MakeSprite(64, (u, v) => u * u + v * v <= 1f, Vector4.zero);
+        sRing = MakeSprite(256, (u, v) => { float d = u * u + v * v; return d <= 1f && d >= 0.955f; }, Vector4.zero);
         sDiamond = MakeSprite(64, (u, v) => Mathf.Abs(u) + Mathf.Abs(v) <= 1f, Vector4.zero);
         sRoundFill = MakeSprite(64, (u, v) => RoundRectSdf(u, v, r) <= 0f, Vector4.one * 16f);
         sRoundFrame = MakeSprite(64, (u, v) => { float d = RoundRectSdf(u, v, r); return d <= 0f && d >= -0.09f; }, Vector4.one * 16f);

@@ -9,12 +9,22 @@ public class TrashPile : MonoBehaviour
 {
     public static readonly List<TrashPile> All = new List<TrashPile>();
 
+    [Tooltip("Set automatically when the game starts (= Amount): a pile always starts full, Amount does not shrink the look")]
     public int maxAmount = 100;
+    [Tooltip("How much trash the pile holds. With Auto Size (Trash Pile Builder) the builder's Amount is used")]
     public int amount = 100;
     public float pickupRadius = 4f;
     [Tooltip("Height of the top of the pile, used as the point items fly from")]
     public float topHeight = 1.6f;
     [Range(0.05f, 1f)] public float minMoundScale = 0.3f;
+
+    [Header("Ground")]
+    [Tooltip("Flatten the ground under this pile (round pad with a soft border) when the game starts. After switching it on press 'Rebuild Pile' / 'Build Pile' so the heap is built on the flat ground.")]
+    public bool levelGround = false;
+    [Tooltip("Radius of the flat pad in metres. 0 = automatic (the size of the pile)")]
+    public float levelRadius = 0f;
+    [HideInInspector] public bool groundBaked;
+    [HideInInspector] public Vector3 bakedPosition;
 
     [Header("References")]
     public Transform visualRoot;
@@ -37,15 +47,39 @@ public class TrashPile : MonoBehaviour
     Vector3 labelBaseScale = Vector3.one;
     Vector3 labelBasePos;
 
+    [System.NonSerialized] public bool leveled;   // the ground under it has been leveled this session
+
+    /// Radius of the flat pad: Level Radius, or the size of the pile.
+    public float LevelRadius
+    {
+        get
+        {
+            if (levelRadius > 0f) return levelRadius;
+            var b = GetComponent<TrashPileBuilder>();
+            if (b != null) return b.autoSize ? b.radius : b.heapRadius * 1.9f;
+            return pickupRadius * 0.8f;
+        }
+    }
+
     public bool IsEmpty => amount <= 0;
     float Fraction => maxAmount > 0 ? (float)amount / maxAmount : 0f;
+
+    // piles spawned after the scene started (the scene's own piles are leveled together with the buildings)
+    void Start()
+    {
+        if (levelGround && !leveled) GroundLeveler.LevelPile(this);
+    }
 
     void OnEnable() { if (!All.Contains(this)) All.Add(this); }
     void OnDisable() { All.Remove(this); }
 
     void Awake()
     {
-        amount = Mathf.Clamp(amount, 0, maxAmount);
+        // a pile starts full: the amount only changes how it looks through Auto Size (the builder rebuilds the heap)
+        var builder = GetComponent<TrashPileBuilder>();
+        if (builder != null && builder.autoSize) amount = Mathf.Max(1, builder.amount);
+        amount = Mathf.Max(0, amount);
+        maxAmount = Mathf.Max(1, amount);
         if (label != null) { labelBaseScale = label.transform.localScale; labelBasePos = label.transform.localPosition; }
         CollectParts();
         Refresh(instant: true);
@@ -88,6 +122,7 @@ public class TrashPile : MonoBehaviour
         from = TakePoint;
         if (amount <= 0) return false;
         amount--;
+        if (amount == 0) PileClearFX.Play(transform.position, LevelRadius);   // fully cleared
         labelPunch = 1f;
         Refresh(instant: false);
         return true;

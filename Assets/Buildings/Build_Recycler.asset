@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BuildingDef
   displayName: Recycler
   description: Bots drop trash here
-  cost: 80
+  cost: 40
   buildTime: 5
   prefab: {fileID: 7605412666096002354, guid: 74e2e009c72f14bf4b496050eaeb2c5a, type: 3}
   color: {r: 0.4, g: 0.92, b: 0.5, a: 1}

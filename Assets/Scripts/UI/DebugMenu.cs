@@ -52,7 +52,7 @@ public class DebugMenu : MonoBehaviour
         openButton = b.gameObject;
         var rt = (RectTransform)b.transform;
         rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0f, 1f);
-        rt.anchoredPosition = new Vector2(20f, -240f);
+        rt.anchoredPosition = new Vector2(24f, -246f);   // under the stats panel
         rt.sizeDelta = new Vector2(150f, 62f);
     }
 
@@ -120,7 +120,10 @@ public class DebugMenu : MonoBehaviour
         Btn("TP FACTORY", g, () => Teleport(Fac() != null ? Fac().transform : null, -4f));
         Btn("TP CHARGER", g, () => Teleport(ChargingStation.All.Count > 0 ? ChargingStation.All[0].transform : null, 4f));
         Btn("TP RECYCLER", g, () => Teleport(HomeBase.All.Count > 0 ? HomeBase.All[0].transform : null, -4.5f));
-        TMP_Text freeLabel = null, fogLabel = null;
+        TMP_Text freeLabel = null, fogLabel = null, pipeLabel = null;
+        pipeLabel = Btn("PIPE: ON", g, () => { PipeTether.Disabled = !PipeTether.Disabled; pipeLabel.text = PipeTether.Disabled ? "PIPE: OFF" : "PIPE: ON"; }).GetComponentInChildren<TMP_Text>();
+        Btn("PIPE LV +1", g, () => { var t = PipeTether.Instance; if (t != null) t.SetLevel(t.level + 1); });
+        Btn("PIPE LV 1", g, () => { var t = PipeTether.Instance; if (t != null) t.SetLevel(1); }, Danger);
         freeLabel = Btn("FREE BUILD: OFF", g, () => { BuildMode.FreeBuild = !BuildMode.FreeBuild; freeLabel.text = BuildMode.FreeBuild ? "FREE BUILD: ON" : "FREE BUILD: OFF"; }).GetComponentInChildren<TMP_Text>();
         fogLabel = Btn("REVEAL MAP: OFF", g, () =>
         {

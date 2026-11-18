@@ -1,6 +1,6 @@
 using UnityEngine;
 
-/// Shows the floating "BUILD BOTS" / "PROGRAM" buttons when the player is close enough.
+/// Shows the floating "BUILD BOTS" / "PROGRAM" buttons (and "BASE" at the home base) when the player is close enough.
 public class PlayerInteractions : MonoBehaviour
 {
     public WorldButton factoryButton;
@@ -13,6 +13,11 @@ public class PlayerInteractions : MonoBehaviour
     [Tooltip("Screen offset so BUILD BOTS and UPGRADE sit side by side")]
     public Vector2 factoryButtonSpread = new Vector2(178f, 0f);
 
+    [Header("Base (opens the build popup)")]
+    [Tooltip("Looked up automatically when empty")]
+    public BuildMode buildMenu;
+    public Vector3 baseButtonOffset = new Vector3(0f, 5.4f, 0f);
+
     public float botRadius = 3f;
     public Vector3 factoryButtonOffset = new Vector3(0f, 5.2f, 0f);
     public Vector3 botButtonOffset = new Vector3(0f, 3.8f, 0f);
@@ -21,6 +26,8 @@ public class PlayerInteractions : MonoBehaviour
     ScoutBot shownBot;
     TMPro.TMP_Text upgradeLabel;
     int upgradeAlert = -1;
+    WorldButton baseButton;
+    bool baseShown;
 
     void Update()
     {
@@ -54,6 +61,7 @@ public class PlayerInteractions : MonoBehaviour
             }
         }
         UpdateUpgradeAlert();
+        UpdateBaseButton();
 
         ScoutBot best = null;
         float bestD = botRadius * botRadius;
@@ -80,6 +88,54 @@ public class PlayerInteractions : MonoBehaviour
         factoryButton.Hide();
         botButton.Hide();
         if (upgradeButton != null) upgradeButton.Hide();
+        if (baseButton != null) baseButton.Hide();
+        baseShown = false;
+    }
+
+    // ------------------------------------------------------------------ BASE button
+
+    // the home base = the one with the pipe (the hand-placed drill); built recyclers have no BASE button
+    HomeBase MainBase()
+    {
+        var pt = PipeTether.Instance;
+        var hb = pt != null ? pt.GetComponent<HomeBase>() : null;
+        if (hb == null && HomeBase.All.Count > 0) hb = HomeBase.All[0];
+        return hb;
+    }
+
+    void UpdateBaseButton()
+    {
+        var hb = MainBase();
+        bool inRange = hb != null && hb.InRange(transform.position);
+        if (!inRange)
+        {
+            if (baseShown && baseButton != null) baseButton.Hide();
+            baseShown = false;
+            return;
+        }
+        if (baseButton == null) MakeBaseButton();
+        if (baseButton == null) return;
+        if (baseShown) return;
+        baseShown = true;
+        baseButton.Show(hb.transform, baseButtonOffset, OpenBase);
+    }
+
+    // a copy of the factory button (same look), so no scene setup is needed
+    void MakeBaseButton()
+    {
+        if (factoryButton == null) return;
+        var go = Instantiate(factoryButton.gameObject, factoryButton.transform.parent);
+        go.name = "BaseButton";
+        go.SetActive(false);
+        baseButton = go.GetComponent<WorldButton>();
+        var label = go.GetComponentInChildren<TMPro.TMP_Text>(true);
+        if (label != null) label.text = "BASE";
+    }
+
+    void OpenBase()
+    {
+        if (buildMenu == null) buildMenu = FindFirstObjectByType<BuildMode>(FindObjectsInactive.Include);
+        if (buildMenu != null) buildMenu.OpenMenu();
     }
 
     // "UPGRADE !" when there's a skill point to spend or a level-up is affordable

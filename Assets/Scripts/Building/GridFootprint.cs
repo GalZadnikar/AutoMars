@@ -12,6 +12,8 @@ public class GridFootprint : MonoBehaviour
     public Vector2 centerOffset;
     [Tooltip("Hand-placed in the scene: flatten the ground under it when the game starts (built ones are leveled when placed)")]
     public bool levelGround = true;
+    [HideInInspector] public bool groundBaked;      // leveled by Bake Ground Leveling at this position
+    [HideInInspector] public Vector3 bakedPosition;
 
     readonly List<Vector2Int> cells = new List<Vector2Int>();
     public IReadOnlyList<Vector2Int> Cells => cells;
