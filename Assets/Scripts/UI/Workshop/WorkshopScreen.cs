@@ -86,15 +86,20 @@ public class WorkshopScreen : MonoBehaviour
         if (wired) return;
         wired = true;
         closeButton.onClick.AddListener(Close);
+        if (outputText != null)
+        {
+            outputText.textWrappingMode = TextWrappingModes.NoWrap;
+            outputText.enableAutoSizing = true;
+            outputText.fontSizeMin = 18f;
+            outputText.fontSizeMax = outputText.fontSize;
+        }
         levelUpButton.onClick.AddListener(LevelUp);
         equipButton.onClick.AddListener(EquipInspected);
-        if (batterySlot != null) batterySlot.onClick.AddListener(OpenPicker);
+        if (batterySlot != null) batterySlot.onClick.AddListener(() => OpenPicker(PickerMode.Battery));
         if (batteryBackButton != null) batteryBackButton.onClick.AddListener(ClosePicker);
         if (batteryEquipButton != null) batteryEquipButton.onClick.AddListener(EquipPicked);
         if (batteryRemoveButton != null) batteryRemoveButton.onClick.AddListener(RemoveBattery);
-        if (diskSlot != null) diskSlot.onClick.AddListener(() =>
-            Toast(up != null && up.MasterDiskUnlocked ? "MASTER DISK SLOT  -  COMING SOON"
-                                                      : "UNLOCKS AT FACTORY LEVEL " + (up != null ? up.tree.masterDiskUnlockLevel : 4)));
+        if (diskSlot != null) diskSlot.onClick.AddListener(OpenDiskSlot);
         if (devButton != null)
         {
             devButton.onClick.AddListener(() => { if (Economy.Instance != null) Economy.Instance.AddMaterials(devAmount); });
@@ -248,11 +253,12 @@ public class WorkshopScreen : MonoBehaviour
 
         titleText.text = tree.displayName.ToUpper();
         categoryText.text = tree.category.ToUpper();
-        outputText.text = "OUTPUT:  " + tree.outputName.ToUpper() + "   <color=" + WorkshopTheme.Hex(WorkshopTheme.Orange) + ">LV " + up.Level + "</color>";
+        outputText.text = "OUTPUT:  " + tree.outputName.ToUpper() + "   <color=" + WorkshopTheme.Hex(WorkshopTheme.Orange) + ">LV " + up.Level + "</color>" +
+                          (up.masterDisk != null && up.MasterDiskUnlocked ? "   <color=" + WorkshopTheme.Hex(up.masterDisk.color) + ">AUTO: " + up.masterDisk.shortName.ToUpper() + "</color>" : "");
 
         // --- stats (with deltas while a perk is inspected) ---
         StatBlock preview = pickerOpen
-            ? (pickIndex >= 0 ? up.ComputeStats(-1, -1, true, InventoryBattery(pickIndex)) : null)
+            ? (pickIndex >= 0 && pickerMode == PickerMode.Battery ? up.ComputeStats(-1, -1, true, InventoryBattery(pickIndex)) : null)
             : (inspectTier >= 0 ? up.ComputeStats(inspectTier, inspectOption) : null);
         statRows[0].Set("Robot Level", cur.Level.ToString(), "", true);
         for (int i = 0; i < Stats.All.Length; i++)
@@ -300,9 +306,14 @@ public class WorkshopScreen : MonoBehaviour
         if (batteryIcon != null) batteryIcon.color = eq != null ? eq.Color : WorkshopTheme.Muted;
         if (pickerOpen) RefreshPicker();
         bool diskOpen = up.MasterDiskUnlocked;
-        if (diskState != null) diskState.text = diskOpen ? "EMPTY" : "LV " + tree.masterDiskUnlockLevel;
+        var md = up.masterDisk;
+        int disksOwned = invB != null ? invB.disks.Count : 0;
+        if (diskState != null)
+            diskState.text = !diskOpen ? "LV " + tree.masterDiskUnlockLevel
+                           : md != null ? "<color=" + WorkshopTheme.Hex(md.color) + ">" + md.shortName.ToUpper() + "</color>"
+                           : disksOwned > 0 ? "<color=" + WorkshopTheme.Hex(WorkshopTheme.Orange) + ">+ EQUIP</color>" : "EMPTY";
         if (diskLock != null) diskLock.SetActive(!diskOpen);
-        if (diskIcon != null) diskIcon.color = diskOpen ? WorkshopTheme.White : WorkshopTheme.LockedGlyph;
+        if (diskIcon != null) diskIcon.color = !diskOpen ? WorkshopTheme.LockedGlyph : md != null ? md.color : WorkshopTheme.Muted;
 
         // --- level ---
         levelText.text = "FACTORY LEVEL  <color=" + WorkshopTheme.Hex(WorkshopTheme.Orange) + ">" + up.Level + "</color> / " + up.MaxLevel;
@@ -403,7 +414,11 @@ public class WorkshopScreen : MonoBehaviour
         }
     }
 
-    // ------------------------------------------------------------------ battery picker
+    // ------------------------------------------------------------------ slot picker (battery / master disk)
+    // One panel that covers the tree; the stats on the left stay visible for comparing.
+
+    enum PickerMode { Battery, Disk }
+    PickerMode pickerMode;
 
     BatteryItem InventoryBattery(int i)
     {
@@ -411,14 +426,31 @@ public class WorkshopScreen : MonoBehaviour
         return inv != null && i >= 0 && i < inv.batteries.Count ? inv.batteries[i] : null;
     }
 
-    void OpenPicker()
+    DiskProgram InventoryDisk(int i)
+    {
+        var inv = PlayerInventory.Instance;
+        return inv != null && i >= 0 && i < inv.disks.Count ? inv.disks[i] : null;
+    }
+
+    void OpenPicker(PickerMode mode)
     {
         if (up == null || batteryPanel == null) return;
+        pickerMode = mode;
         pickerOpen = true;
         pickIndex = -1;
         inspectTier = inspectOption = -1;
         batteryPanel.SetActive(true);
+        var title = batteryPanel.transform.Find("Title");
+        if (title != null) title.GetComponent<TMP_Text>().text = mode == PickerMode.Battery ? "BATTERIES" : "MASTER DISK";
+        batteryEmptyText.text = mode == PickerMode.Battery ? "No batteries yet.\nExplore the map to find them!" : "No disks.\nFind disks on the map!";
         Refresh();
+    }
+
+    void OpenDiskSlot()
+    {
+        if (up == null) return;
+        if (!up.MasterDiskUnlocked) { Toast("UNLOCKS AT FACTORY LEVEL " + up.tree.masterDiskUnlockLevel); return; }
+        OpenPicker(PickerMode.Disk);
     }
 
     void ClosePicker()
@@ -431,6 +463,14 @@ public class WorkshopScreen : MonoBehaviour
 
     void EquipPicked()
     {
+        if (pickerMode == PickerMode.Disk)
+        {
+            var disk = InventoryDisk(pickIndex);
+            if (disk == null) return;
+            pickIndex = -1;
+            if (up.EquipMasterDisk(disk)) Toast("MASTER DISK: " + disk.displayName.ToUpper());
+            return;
+        }
         var b = InventoryBattery(pickIndex);
         if (b == null) return;
         pickIndex = -1;
@@ -439,9 +479,13 @@ public class WorkshopScreen : MonoBehaviour
 
     void RemoveBattery()
     {
-        var eq = up.equippedBattery;
-        if (eq == null) return;
         pickIndex = -1;
+        if (pickerMode == PickerMode.Disk)
+        {
+            if (up.masterDisk != null && up.UnequipMasterDisk()) Toast("MASTER DISK REMOVED");
+            return;
+        }
+        if (up.equippedBattery == null) return;
         if (up.UnequipBattery()) Toast("BATTERY REMOVED");
         else Toast("BATTERY SLOTS FULL");
     }
@@ -449,51 +493,72 @@ public class WorkshopScreen : MonoBehaviour
     void RefreshPicker()
     {
         var inv = PlayerInventory.Instance;
-        var list = inv != null ? inv.batteries : new List<BatteryItem>();
-        if (pickIndex >= list.Count) pickIndex = -1;
+        bool disk = pickerMode == PickerMode.Disk;
+        int count = inv == null ? 0 : disk ? inv.disks.Count : inv.batteries.Count;
+        if (pickIndex >= count) pickIndex = -1;
 
-        while (cards.Count < list.Count)
-        {
-            var c = Instantiate(batteryCardTemplate, batteryGrid);
-            cards.Add(c);
-        }
+        while (cards.Count < count) cards.Add(Instantiate(batteryCardTemplate, batteryGrid));
         for (int i = 0; i < cards.Count; i++)
         {
-            bool on = i < list.Count;
+            bool on = i < count;
             cards[i].gameObject.SetActive(on);
             if (!on) continue;
             int ii = i;
-            cards[i].Setup(list[i], () => { pickIndex = ii; Refresh(); });
+            System.Action tap = () => { pickIndex = ii; Refresh(); };
+            if (disk)
+            {
+                var p = inv.disks[i];
+                cards[i].SetupCustom(p.displayName, "AUTO-PROGRAM", p.color, diskIcon != null ? diskIcon.sprite : null, tap);
+            }
+            else cards[i].Setup(inv.batteries[i], tap);
             cards[i].SetSelected(i == pickIndex);
         }
-        batteryEmptyText.gameObject.SetActive(list.Count == 0);
+        batteryEmptyText.gameObject.SetActive(count == 0);
 
-        var eq = up.equippedBattery;
-        float now = up.Current[StatType.BatteryRuntime];
-        batteryEquippedText.text = eq != null
-            ? "IN SLOT:  <color=" + WorkshopTheme.Hex(eq.Color) + ">" + eq.displayName.ToUpper() + "</color>   " + Stats.Clock(eq.runtimeSeconds)
-            : "IN SLOT:  <color=" + WorkshopTheme.Hex(WorkshopTheme.Muted) + ">BUILT-IN SCRAP CELL</color>";
-
-        var pick = InventoryBattery(pickIndex);
-        if (pick != null)
+        bool hasEquipped;
+        if (disk)
         {
-            float after = up.ComputeStats(-1, -1, true, pick)[StatType.BatteryRuntime];
-            float d = after - now;
-            string delta = Stats.FormatDelta(StatType.BatteryRuntime, d);
-            batteryDetailText.text = "<color=" + WorkshopTheme.Hex(pick.Color) + ">" + pick.displayName.ToUpper() + "</color>\n" +
-                "New bots: " + Stats.Clock(after) + " per charge  <color=" + WorkshopTheme.Hex(d >= 0 ? WorkshopTheme.Green : WorkshopTheme.Red) + ">" + delta + "</color>";
+            var md = up.masterDisk;
+            hasEquipped = md != null;
+            batteryEquippedText.text = md != null
+                ? "IN SLOT:  <color=" + WorkshopTheme.Hex(md.color) + ">" + md.displayName.ToUpper() + "</color>"
+                : "IN SLOT:  <color=" + WorkshopTheme.Hex(WorkshopTheme.Muted) + ">EMPTY (new bots come out idle)</color>";
+            var pick = InventoryDisk(pickIndex);
+            batteryDetailText.text = pick != null
+                ? "<color=" + WorkshopTheme.Hex(pick.color) + ">" + pick.displayName.ToUpper() + "</color>\nEvery new bot rolls out already running this program."
+                : "Put a disk here and every bot this factory builds starts working right away.\nThe disk stays in the factory (REMOVE gives it back).";
+            batteryEquipButton.interactable = pick != null;
         }
         else
         {
-            batteryDetailText.text = "Every bot this factory builds gets the battery's runtime.\n" +
-                "Battery slots: " + list.Count + " / " + (inv != null ? inv.batterySlots : 0) + "   Tap a battery to compare.";
+            var eq = up.equippedBattery;
+            hasEquipped = eq != null;
+            float now = up.Current[StatType.BatteryRuntime];
+            batteryEquippedText.text = eq != null
+                ? "IN SLOT:  <color=" + WorkshopTheme.Hex(eq.Color) + ">" + eq.displayName.ToUpper() + "</color>   " + Stats.Clock(eq.runtimeSeconds)
+                : "IN SLOT:  <color=" + WorkshopTheme.Hex(WorkshopTheme.Muted) + ">BUILT-IN SCRAP CELL</color>";
+            var pick = InventoryBattery(pickIndex);
+            if (pick != null)
+            {
+                float after = up.ComputeStats(-1, -1, true, pick)[StatType.BatteryRuntime];
+                float dd = after - now;
+                batteryDetailText.text = "<color=" + WorkshopTheme.Hex(pick.Color) + ">" + pick.displayName.ToUpper() + "</color>\n" +
+                    "New bots: " + Stats.Clock(after) + " per charge  <color=" + WorkshopTheme.Hex(dd >= 0 ? WorkshopTheme.Green : WorkshopTheme.Red) + ">" +
+                    Stats.FormatDelta(StatType.BatteryRuntime, dd) + "</color>";
+            }
+            else
+            {
+                batteryDetailText.text = "Every bot this factory builds gets the battery's runtime.\n" +
+                    "Battery slots: " + count + " / " + (inv != null ? inv.batterySlots : 0) + "   Tap a battery to compare.";
+            }
+            batteryEquipButton.interactable = pick != null;
         }
-        batteryEquipButton.interactable = pick != null;
-        if (batteryEquipLabel != null) batteryEquipLabel.text = eq != null ? "SWAP" : "EQUIP";
-        batteryRemoveButton.interactable = eq != null;
+
+        if (batteryEquipLabel != null) batteryEquipLabel.text = hasEquipped ? "SWAP" : "EQUIP";
+        batteryRemoveButton.interactable = hasEquipped;
         var rl = batteryRemoveButton.GetComponentInChildren<TMP_Text>();
-        if (rl != null) rl.alpha = eq != null ? 1f : 0.35f;
-        batteryEquipButton.GetComponentInChildren<TMP_Text>().alpha = pick != null ? 1f : 0.45f;
+        if (rl != null) rl.alpha = hasEquipped ? 1f : 0.35f;
+        batteryEquipButton.GetComponentInChildren<TMP_Text>().alpha = batteryEquipButton.interactable ? 1f : 0.45f;
     }
 
     // ------------------------------------------------------------------ feedback

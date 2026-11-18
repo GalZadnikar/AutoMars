@@ -12,6 +12,9 @@ public class BuildingUpgrades : MonoBehaviour
     [Tooltip("Battery in the factory's slot: every bot built here gets its runtime. Empty = the bot prefab's built-in cell.")]
     public BatteryItem equippedBattery;
 
+    [Tooltip("Master Disk (unlocks at tree.masterDiskUnlockLevel): every new bot comes out running this program.")]
+    public DiskProgram masterDisk;
+
     [SerializeField] int level = 1;
     [Tooltip("Equipped option per tier, -1 = nothing equipped yet")]
     [SerializeField] List<int> picks = new List<int>();
@@ -125,6 +128,31 @@ public class BuildingUpgrades : MonoBehaviour
         Changed();
         return true;
     }
+
+    /// Moves a disk from the player's inventory into the Master Disk slot (the old one goes back).
+    public bool EquipMasterDisk(DiskProgram disk)
+    {
+        var inv = PlayerInventory.Instance;
+        if (disk == null || inv == null || !MasterDiskUnlocked || !inv.RemoveDisk(disk)) return false;
+        var old = masterDisk;
+        masterDisk = disk;
+        if (old != null) inv.Add(old);
+        Changed();
+        return true;
+    }
+
+    public bool UnequipMasterDisk()
+    {
+        var inv = PlayerInventory.Instance;
+        if (masterDisk == null || inv == null) return false;
+        inv.Add(masterDisk);
+        masterDisk = null;
+        Changed();
+        return true;
+    }
+
+    /// The program new bots get, or null (slot empty / still locked).
+    public DiskProgram AutoProgram => MasterDiskUnlocked ? masterDisk : null;
 
     void Changed()
     {

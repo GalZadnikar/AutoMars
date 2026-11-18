@@ -112,6 +112,7 @@ public int Queued { get; private set; }
         {
             bot.Init(RallyPoint(built - 1), built);
             if (Upgrades != null) bot.ApplyStats(Upgrades.Current);   // bots keep what they were built with
+            if (Upgrades != null && Upgrades.AutoProgram != null) bot.SetProgram(Upgrades.AutoProgram);   // Master Disk: straight to work
         }
     }
 

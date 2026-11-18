@@ -82,7 +82,8 @@ public class PlayerInteractions : MonoBehaviour
         var u = shownFactory.Upgrades;
         var inv = PlayerInventory.Instance;
         bool batteryWaiting = u.equippedBattery == null && inv != null && inv.batteries.Count > 0;
-        int alert = u.UnspentPoints > 0 || u.CanAffordLevelUp || batteryWaiting ? 1 : 0;
+        bool diskWaiting = u.MasterDiskUnlocked && u.masterDisk == null && inv != null && inv.disks.Count > 0;
+        int alert = u.UnspentPoints > 0 || u.CanAffordLevelUp || batteryWaiting || diskWaiting ? 1 : 0;
         if (alert == upgradeAlert) return;
         upgradeAlert = alert;
         if (upgradeLabel == null) upgradeLabel = upgradeButton.GetComponentInChildren<TMPro.TMP_Text>(true);

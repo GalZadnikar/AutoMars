@@ -70,7 +70,8 @@ public class FactoryPopup : MonoBehaviour
         count = Mathf.Clamp(count, 0, Max);
         int have = Economy.Instance != null ? Economy.Instance.materials : 0;
         int lvl = factory.Upgrades != null ? factory.Upgrades.Level : 1;
-        infoText.text = "Scout Bot Lv " + lvl + "  ·  " + factory.CostPerBot + " materials  ·  " + Mathf.RoundToInt(factory.BuildTime) + "s each";
+        infoText.text = "Scout Bot Lv " + lvl + "  ·  " + factory.CostPerBot + " materials  ·  " + Mathf.RoundToInt(factory.BuildTime) + "s each" +
+            (factory.Upgrades != null && factory.Upgrades.AutoProgram != null ? "  ·  auto: " + factory.Upgrades.AutoProgram.shortName : "");
         countText.text = count.ToString();
         totalText.text = "Total: " + (count * factory.CostPerBot) + " materials";
         haveText.text = "You have: " + have;

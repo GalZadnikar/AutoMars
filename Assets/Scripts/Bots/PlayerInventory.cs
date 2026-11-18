@@ -41,6 +41,13 @@ public class PlayerInventory : MonoBehaviour
         OnChanged?.Invoke();
     }
 
+    public bool RemoveDisk(DiskProgram disk)
+    {
+        if (!disks.Remove(disk)) return false;
+        OnChanged?.Invoke();
+        return true;
+    }
+
     public void SetDisks(List<DiskProgram> newDisks)
     {
         disks = new List<DiskProgram>(newDisks);
