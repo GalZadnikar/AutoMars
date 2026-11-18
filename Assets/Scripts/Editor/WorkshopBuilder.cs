@@ -225,7 +225,7 @@ public static class WorkshopBuilder
         ws.outputText = Txt("Output", c, -610, 910, 620, 52, "OUTPUT: SCOUT BOT", 30, WorkshopTheme.White);
 
         // slots (live in Modules 4 / 6), DRG puts these right next to the weapon
-        ws.batterySlot = Slot("BatterySlot", c, -120, 262, "BATTERY", batteryIcon, out ws.batteryState, out _, out _);
+        ws.batterySlot = Slot("BatterySlot", c, -120, 262, "BATTERY", batteryIcon, out ws.batteryState, out ws.batteryIcon, out _);
         ws.diskSlot = Slot("DiskSlot", c, 80, 262, "MASTER DISK", diskIcon, out ws.diskState, out ws.diskIcon, out ws.diskLock);
 
         // stats
@@ -289,6 +289,8 @@ public static class WorkshopBuilder
         ws.levelUpLabel = ws.levelUpButton.GetComponentInChildren<TMP_Text>();
         ws.levelUpLabel.lineSpacing = -20f;
 
+        BuildBatteryPicker(ws, c);
+
         // ---------------- toast (over the showcase) ----------------
         ws.toastText = Txt("Toast", c, -345, 560, 1100, 80, "", 46, WorkshopTheme.Yellow);
         ws.toastText.outlineWidth = 0.25f;
@@ -297,6 +299,71 @@ public static class WorkshopBuilder
 
         root.gameObject.SetActive(false);
         return ws;
+    }
+
+    // battery list that covers the tree panel while open (stats on the left stay visible for comparing)
+    static void BuildBatteryPicker(WorkshopScreen ws, RectTransform c)
+    {
+        var panel = R("BatteryPicker", c, 605, 104, 670, 956);
+        AddImage(panel, WorkshopTheme.Panel);   // blocks taps on the tree below
+        ws.batteryPanel = panel.gameObject;
+        Txt("Title", panel, -120, 8, 400, 58, "BATTERIES", 38, WorkshopTheme.White, TextAlignmentOptions.Left).characterSpacing = 4f;
+        ws.batteryBackButton = Btn("Back", panel, "BACK", WorkshopTheme.ButtonOff, Color.white, 28, new Vector2(0.5f, 1f), new Vector2(240, -38), new Vector2(150, 54));
+        ws.batteryEquippedText = Txt("Equipped", panel, 0, 70, 630, 40, "IN SLOT: -", 24, WorkshopTheme.White, TextAlignmentOptions.Left);
+        AddImage(R("Rule", panel, 0, 116, 640, 4), WorkshopTheme.Orange, raycast: false);
+
+        var grid = R("Grid", panel, 0, 132, 640, 430);
+        var gl = grid.gameObject.AddComponent<GridLayoutGroup>();
+        gl.cellSize = new Vector2(312, 132);
+        gl.spacing = new Vector2(16, 14);
+        gl.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+        gl.constraintCount = 2;
+        ws.batteryGrid = grid;
+        ws.batteryEmptyText = Txt("Empty", panel, 0, 290, 600, 100, "No batteries yet.\nExplore the map to find them!", 28, WorkshopTheme.Muted, style: FontStyles.Normal);
+
+        var detail = R("Detail", panel, 0, 580, 650, 130);
+        AddImage(detail, WorkshopTheme.PanelDark, raycast: false);
+        ws.batteryDetailText = Txt("Text", detail, 0, 12, 610, 106, "", 26, WorkshopTheme.White, TextAlignmentOptions.TopLeft, FontStyles.Normal);
+        ws.batteryDetailText.enableAutoSizing = true;
+        ws.batteryDetailText.fontSizeMin = 18; ws.batteryDetailText.fontSizeMax = 26;
+
+        ws.batteryEquipButton = Btn("Equip", panel, "EQUIP", WorkshopTheme.Orange, WorkshopTheme.DarkText, 36, new Vector2(0.5f, 1f), new Vector2(-160, -790), new Vector2(300, 100));
+        ws.batteryEquipLabel = ws.batteryEquipButton.GetComponentInChildren<TMP_Text>();
+        ws.batteryRemoveButton = Btn("Remove", panel, "REMOVE", WorkshopTheme.ButtonOff, Color.white, 32, new Vector2(0.5f, 1f), new Vector2(170, -790), new Vector2(300, 100));
+        ws.batteryCardTemplate = BatteryCardTemplate(panel);
+        panel.gameObject.SetActive(false);
+    }
+
+    static BatteryCard BatteryCardTemplate(Transform parent)
+    {
+        var rt = R("BatteryCardTemplate", parent, 0, 0, 312, 132);
+        var card = rt.gameObject.AddComponent<BatteryCard>();
+        var frame = NewRect("Selected", rt); Stretch(frame, -5f);
+        card.selectedFrame = AddImage(frame, WorkshopTheme.White, raycast: false);
+        card.selectedFrame.enabled = false;
+        var bgRt = NewRect("Bg", rt); Stretch(bgRt);
+        var bg = AddImage(bgRt, WorkshopTheme.PanelDark);
+        card.button = rt.gameObject.AddComponent<Button>();
+        card.button.targetGraphic = bg;
+
+        var stripe = NewRect("Stripe", rt);
+        stripe.anchorMin = new Vector2(0f, 0f); stripe.anchorMax = new Vector2(0f, 1f);
+        stripe.pivot = new Vector2(0f, 0.5f);
+        stripe.offsetMin = Vector2.zero; stripe.offsetMax = new Vector2(10f, 0f);
+        card.stripe = AddImage(stripe, Color.white, raycast: false);
+
+        var ic = Place(NewRect("Icon", rt), new Vector2(0f, 0.5f), new Vector2(66, 0), new Vector2(84, 84));
+        card.icon = AddImage(ic, Color.white, raycast: false, sprite: batteryIcon);
+        card.icon.preserveAspect = true;
+        var n = Place(NewRect("Name", rt), new Vector2(0f, 0.5f), new Vector2(214, 20), new Vector2(184, 48));
+        card.nameText = AddText(n, "RARE BATTERY", 26, Color.white);
+        card.nameText.alignment = TextAlignmentOptions.Left;
+        card.nameText.enableAutoSizing = true; card.nameText.fontSizeMin = 16; card.nameText.fontSizeMax = 26;
+        var t = Place(NewRect("Runtime", rt), new Vector2(0f, 0.5f), new Vector2(214, -26), new Vector2(184, 40));
+        card.runtimeText = AddText(t, "5:00 RUNTIME", 22, WorkshopTheme.Muted, FontStyles.Normal);
+        card.runtimeText.alignment = TextAlignmentOptions.Left;
+        rt.gameObject.SetActive(false);
+        return card;
     }
 
     static Button Slot(string name, Transform parent, float x, float yTop, string caption, Sprite icon,

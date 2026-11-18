@@ -9,6 +9,9 @@ public class BuildingUpgrades : MonoBehaviour
 {
     public BuildingUpgradeTree tree;
 
+    [Tooltip("Battery in the factory's slot: every bot built here gets its runtime. Empty = the bot prefab's built-in cell.")]
+    public BatteryItem equippedBattery;
+
     [SerializeField] int level = 1;
     [Tooltip("Equipped option per tier, -1 = nothing equipped yet")]
     [SerializeField] List<int> picks = new List<int>();
@@ -102,6 +105,27 @@ public class BuildingUpgrades : MonoBehaviour
         Changed();
     }
 
+    /// Moves a battery from the player's inventory into the slot (the old one goes back).
+    public bool EquipBattery(BatteryItem b)
+    {
+        var inv = PlayerInventory.Instance;
+        if (b == null || inv == null || !inv.RemoveBattery(b)) return false;
+        var old = equippedBattery;
+        equippedBattery = b;
+        if (old != null) inv.AddBattery(old);
+        Changed();
+        return true;
+    }
+
+    public bool UnequipBattery()
+    {
+        var inv = PlayerInventory.Instance;
+        if (equippedBattery == null || inv == null || !inv.AddBattery(equippedBattery)) return false;
+        equippedBattery = null;
+        Changed();
+        return true;
+    }
+
     void Changed()
     {
         current = null;
@@ -110,7 +134,7 @@ public class BuildingUpgrades : MonoBehaviour
 
     /// Stats for the current setup. Pass previewTier/previewOption to see what a different pick
     /// in one tier would give (used by the Workshop to show green/red deltas).
-    public StatBlock ComputeStats(int previewTier = -1, int previewOption = -1)
+    public StatBlock ComputeStats(int previewTier = -1, int previewOption = -1, bool previewBattery = false, BatteryItem battery = null)
     {
         var s = new StatBlock { Level = level };
 
@@ -123,7 +147,8 @@ public class BuildingUpgrades : MonoBehaviour
         s[StatType.UnloadRate] = 1f / Mathf.Max(0.01f, bot != null ? bot.depositInterval : 0.2f);
         s[StatType.BuildTime] = f != null ? f.buildTime : 30f;
         s[StatType.BotCost] = f != null ? f.costPerBot : 10;
-        s[StatType.BatteryRuntime] = bot != null ? bot.batteryRuntime : 120f;
+        var cell = previewBattery ? battery : equippedBattery;
+        s[StatType.BatteryRuntime] = cell != null ? cell.runtimeSeconds : (bot != null ? bot.batteryRuntime : 60f);
 
         if (tree == null) return s;
 

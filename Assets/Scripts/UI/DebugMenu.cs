@@ -60,7 +60,7 @@ public class DebugMenu : MonoBehaviour
     {
         var p = NewRect("DebugPanel", transform);
         p.anchorMin = p.anchorMax = p.pivot = new Vector2(0f, 1f);
-        p.anchoredPosition = new Vector2(16f, -140f);
+        p.anchoredPosition = new Vector2(16f, -100f);
         p.sizeDelta = new Vector2(540f, 0f);
         var bg = p.gameObject.AddComponent<Image>();
         bg.sprite = round; bg.type = Image.Type.Sliced; bg.color = PanelCol;
@@ -110,6 +110,11 @@ public class DebugMenu : MonoBehaviour
         Btn("BATTERY 0%", g, () => SetBattery(0f), Danger);
         Btn("DELETE BOTS", g, DeleteBots, Danger);
 
+        g = Section(p, "BATTERIES");
+        Btn("GIVE COMMON", g, () => GiveBattery(Rarity.Common));
+        Btn("GIVE RARE", g, () => GiveBattery(Rarity.Rare));
+        Btn("GIVE 1 EACH", g, () => { foreach (Rarity r in System.Enum.GetValues(typeof(Rarity))) GiveBattery(r); });
+
         g = Section(p, "WORLD");
         speedLabel = Btn("SPEED x1", g, CycleSpeed).GetComponentInChildren<TMP_Text>();
         Btn("TP FACTORY", g, () => Teleport(BotFactory.Instance != null ? BotFactory.Instance.transform : null, -4f));
@@ -125,7 +130,7 @@ public class DebugMenu : MonoBehaviour
 
         var grid = NewRect(name + " Buttons", parent);
         var gl = grid.gameObject.AddComponent<GridLayoutGroup>();
-        gl.cellSize = new Vector2(164f, 58f);
+        gl.cellSize = new Vector2(164f, 52f);
         gl.spacing = new Vector2(8f, 8f);
         gl.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
         gl.constraintCount = 3;
@@ -204,6 +209,14 @@ public class DebugMenu : MonoBehaviour
     {
         var prog = FirstProgram();
         if (prog != null && PlayerInventory.Instance != null) PlayerInventory.Instance.Add(prog);
+    }
+
+    static void GiveBattery(Rarity r)
+    {
+        var inv = PlayerInventory.Instance;
+        if (inv == null) return;
+        foreach (var b in BatteryItem.LoadAll())
+            if (b.rarity == r) { if (!inv.AddBattery(b)) GameToast.Show("BATTERY SLOTS FULL", new Color(1f, 0.4f, 0.32f)); return; }
     }
 
     static void ProgramAll()

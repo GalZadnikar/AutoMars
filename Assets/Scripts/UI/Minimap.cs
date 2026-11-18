@@ -45,7 +45,7 @@ public class Minimap : MonoBehaviour
     public float diskSize = 18f;
     public float botSize = 14f;
 
-    enum Kind { Home, Factory, Trash, Disk, Bot, Charger }
+    enum Kind { Home, Factory, Trash, Disk, Bot, Charger, Battery }
 
     class Marker
     {
@@ -129,6 +129,11 @@ public class Minimap : MonoBehaviour
             case Kind.Home: sprite = sRoundFill; color = homeColor; size = buildingSize; letter = "H"; break;
             case Kind.Factory: sprite = sRoundFill; color = factoryColor; size = buildingSize; letter = "F"; break;
             case Kind.Charger: sprite = sRoundFill; color = chargerColor; size = buildingSize; letter = "C"; break;
+            case Kind.Battery:
+                sprite = sDiamond; size = diskSize + 6f;
+                var bp = source as BatteryPickup;
+                color = bp != null && bp.battery != null ? bp.battery.Color : Color.white;
+                break;
             case Kind.Trash: sprite = sCircle; color = trashColor; size = trashSize; break;
             case Kind.Disk: sprite = sDiamond; color = diskColor; size = diskSize; break;
             default: sprite = sCircle; color = botColor; size = botSize; break;
@@ -170,6 +175,7 @@ public class Minimap : MonoBehaviour
         foreach (var p in TrashPile.All) Ensure(Kind.Trash, p);
         foreach (var b in ScoutBot.All) Ensure(Kind.Bot, b);
         foreach (var c in ChargingStation.All) Ensure(Kind.Charger, c);
+        foreach (var bp in FindObjectsByType<BatteryPickup>(FindObjectsSortMode.None)) Ensure(Kind.Battery, bp);
     }
 
     void Ensure(Kind kind, Component c)
@@ -210,7 +216,7 @@ public class Minimap : MonoBehaviour
                 m.image.color = bot.IsDead ? deadBotColor : bot.Program != null ? bot.Program.color : botColor;
             }
 
-            if (showFogOfWar && (m.kind == Kind.Trash || m.kind == Kind.Disk) && FogOfWar.Instance != null)
+            if (showFogOfWar && (m.kind == Kind.Trash || m.kind == Kind.Disk || m.kind == Kind.Battery) && FogOfWar.Instance != null)
                 visible &= FogOfWar.Instance.IsExplored(m.source.transform.position);
 
             if (m.icon.gameObject.activeSelf != visible) m.icon.gameObject.SetActive(visible);

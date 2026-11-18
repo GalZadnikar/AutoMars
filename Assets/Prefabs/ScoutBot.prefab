@@ -86,7 +86,7 @@ MonoBehaviour:
   capacity: 5
   pickupInterval: 0.5
   depositInterval: 0.2
-  batteryRuntime: 120
+  batteryRuntime: 60
   lowBatteryFraction: 0.15
   reserveSeconds: 8
   jumpStartRadius: 2.6

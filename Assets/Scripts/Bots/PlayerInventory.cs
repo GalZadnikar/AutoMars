@@ -12,6 +12,26 @@ public class PlayerInventory : MonoBehaviour
 
     public int DiskCount => disks.Count;
 
+    [Header("Batteries (dedicated slots)")]
+    public int batterySlots = 6;
+    public List<BatteryItem> batteries = new List<BatteryItem>();
+    public bool HasBatterySpace => batteries.Count < batterySlots;
+
+    public bool AddBattery(BatteryItem b)
+    {
+        if (b == null || !HasBatterySpace) return false;
+        batteries.Add(b);
+        OnChanged?.Invoke();
+        return true;
+    }
+
+    public bool RemoveBattery(BatteryItem b)
+    {
+        if (!batteries.Remove(b)) return false;
+        OnChanged?.Invoke();
+        return true;
+    }
+
     void Awake() { Instance = this; }
 
     public void Add(DiskProgram disk)

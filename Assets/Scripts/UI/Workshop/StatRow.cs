@@ -8,6 +8,17 @@ public class StatRow : MonoBehaviour
     public TMP_Text value;
     public TMP_Text delta;
 
+    void Awake()
+    {
+        if (delta != null)
+        {
+            delta.textWrappingMode = TextWrappingModes.NoWrap;
+            delta.enableAutoSizing = true;
+            delta.fontSizeMin = 14f;
+            delta.fontSizeMax = delta.fontSize;
+        }
+    }
+
     public void Set(string labelText, string valueText, string deltaText, bool deltaGood)
     {
         label.text = labelText;

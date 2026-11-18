@@ -86,7 +86,9 @@ public static class Stats
         if (s == StatType.BatteryRuntime)
         {
             int sec = Mathf.RoundToInt(delta);
-            return sec == 0 ? "" : (sec > 0 ? "+" : "-") + Mathf.Abs(sec) + "s";
+            if (sec == 0) return "";
+            string sign = sec > 0 ? "+" : "-";
+            return Mathf.Abs(sec) >= 60 ? sign + Clock(Mathf.Abs(sec)) : sign + Mathf.Abs(sec) + "s";
         }
         if (Mathf.Abs(delta) < 0.05f) return "";
         return (delta > 0 ? "+" : "-") + Mathf.Abs(delta).ToString(s == StatType.BuildTime ? "0.#" : "0.0");
