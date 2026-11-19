@@ -29,6 +29,11 @@ public class PlayerInteractions : MonoBehaviour
     WorldButton baseButton;
     bool baseShown;
 
+    [Header("Trade Post (opens the shop popup)")]
+    public Vector3 tradeButtonOffset = new Vector3(0f, 6.2f, 0f);
+    WorldButton tradeButton;
+    TradePost shownTrade;
+
     void Update()
     {
         if (UIState.ModalOpen || UIState.BuildMode) { HideAll(); return; }
@@ -64,6 +69,7 @@ public class PlayerInteractions : MonoBehaviour
         }
         UpdateUpgradeAlert();
         UpdateBaseButton();
+        UpdateTradeButton();
 
         ScoutBot best = null;
         float bestD = botRadius * botRadius;
@@ -92,6 +98,32 @@ public class PlayerInteractions : MonoBehaviour
         if (upgradeButton != null) upgradeButton.Hide();
         if (baseButton != null) baseButton.Hide();
         baseShown = false;
+        if (tradeButton != null) tradeButton.Hide();
+        if (shownTrade != null) shownTrade.SetHighlight(false);
+        shownTrade = null;
+    }
+
+    // ------------------------------------------------------------------ TRADE button (Trade Post shop)
+
+    void UpdateTradeButton()
+    {
+        var tp = TradePost.InRangeOf(transform.position);
+        if (tp == shownTrade) return;
+        if (shownTrade != null) shownTrade.SetHighlight(false);
+        shownTrade = tp;
+        if (tp == null) { if (tradeButton != null) tradeButton.Hide(); return; }
+        if (tradeButton == null)
+        {
+            if (factoryButton == null) return;
+            var go = Instantiate(factoryButton.gameObject, factoryButton.transform.parent);   // same look as BUILD BOTS
+            go.name = "TradeButton";
+            go.SetActive(false);
+            tradeButton = go.GetComponent<WorldButton>();
+            var label = go.GetComponentInChildren<TMPro.TMP_Text>(true);
+            if (label != null) label.text = "TRADE";
+        }
+        tp.SetHighlight(true);
+        tradeButton.Show(tp.transform, tradeButtonOffset, () => TradePostPopup.Open(tp));
     }
 
     // ------------------------------------------------------------------ BASE button

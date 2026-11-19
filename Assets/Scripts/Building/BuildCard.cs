@@ -13,6 +13,8 @@ public class BuildCard : MonoBehaviour
     public ModelPreview preview;
     [Tooltip("Optional second image tinted with the building colour")]
     public Image badge;
+    [Tooltip("Small grid tile: info shows only size + build time (no description)")]
+    public bool compact;
 
     GameObject previewPrefab;
 
@@ -23,17 +25,28 @@ public class BuildCard : MonoBehaviour
         if (button != null) button.onClick.AddListener(() => onTap?.Invoke());
     }
 
+    public BuildingDef Def { get; private set; }
+
     public void Setup(BuildingDef def, Action tap)
     {
+        Def = def;
         onTap = tap;
         icon.color = def.color;
         if (badge != null) badge.color = def.color;
         glyph.text = def.glyph;
         nameText.text = def.displayName.ToUpper();
         var fp = def.Footprint;
-        string size = fp != null ? fp.size.x + "×" + fp.size.y + " tiles" : "";
-        if (preview != null) size += "  ·  " + def.buildTime.ToString("0.#") + "s to build";
-        infoText.text = size + (string.IsNullOrEmpty(def.description) ? "" : "\n" + def.description);
+        if (compact)
+        {
+            // small grid tile: just size and build time
+            infoText.text = (fp != null ? fp.size.x + "×" + fp.size.y + "  ·  " : "") + def.buildTime.ToString("0.#") + "s";
+        }
+        else
+        {
+            string size = fp != null ? fp.size.x + "×" + fp.size.y + " tiles" : "";
+            if (preview != null) size += "  ·  " + def.buildTime.ToString("0.#") + "s to build";
+            infoText.text = size + (string.IsNullOrEmpty(def.description) ? "" : "\n" + def.description);
+        }
         previewPrefab = def.prefab;
     }
 
@@ -65,5 +78,11 @@ public class BuildCard : MonoBehaviour
     {
         costText.text = cost + " MATERIALS";
         costText.color = affordable ? WorkshopTheme.Yellow : WorkshopTheme.Red;
+        // not enough materials: the whole card fades (tapping it only says what is missing)
+        if (group == null) group = GetComponent<CanvasGroup>();
+        if (group == null) group = gameObject.AddComponent<CanvasGroup>();
+        group.alpha = affordable ? 1f : 0.5f;
     }
+
+    CanvasGroup group;
 }

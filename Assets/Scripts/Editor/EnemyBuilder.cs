@@ -4,7 +4,8 @@ using UnityEngine;
 
 /// 13. Enemies (E1 / E2 / E3): copies the Voodoo drone prefab to Assets/Resources/Enemies/EnemyDroneModel.prefab (the enemy
 /// drone's look; without it the drone is built from primitives) and adds hand-placed spawners.
-/// Enemies themselves are built in code, so there is nothing else to set up.
+/// 13. Enemies (Make Prefabs) saves the four enemies as prefabs in Assets/Resources/Enemies (Enemy Scout, Enemy Drone,
+/// Leech Hole, Target Dummy): drag them into the scene to place them. Spawn() / spawners / the debug menu use the same prefabs.
 public static class EnemyBuilder
 {
     const string ModelPath = "Assets/VoodooPlay/Prefab/Drone.prefab";
@@ -60,6 +61,56 @@ public static class EnemyBuilder
         Selection.activeGameObject = go;
     }
 
+    // ---------------------------------------------------------------- prefabs
+
+    const string Folder = "Assets/Resources/Enemies";
+    public const string ScoutPrefabPath = Folder + "/Enemy Scout.prefab";
+    public const string DronePrefabPath = Folder + "/Enemy Drone.prefab";
+    public const string LeechPrefabPath = Folder + "/Leech Hole.prefab";
+    public const string DummyPrefabPath = Folder + "/Target Dummy.prefab";
+
+    /// Makes the missing enemy prefabs (existing ones keep your edits; delete one to get it rebuilt).
+    [MenuItem("Tools/Trash Game/13. Enemies (Make Prefabs)")]
+    public static void MakePrefabs()
+    {
+        if (!Directory.Exists(Folder)) Directory.CreateDirectory(Folder);
+        AssetDatabase.Refresh();
+        Mat(EnemyParts.LitResource, "Universal Render Pipeline/Lit");
+        Mat(EnemyParts.UnlitResource, "Universal Render Pipeline/Unlit");
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(ScoutTarget) == null) BuildScoutModel();
+        BuildModel();
+        BuildLeechMaterial();
+
+        Make(ScoutPrefabPath, "Enemy Scout", go => EnemyScout.Create(go));
+        Make(DronePrefabPath, "Enemy Drone", go => EnemyDrone.Create(go));
+        Make(LeechPrefabPath, "Leech Hole", go => { go.AddComponent<LeechBody>(); go.AddComponent<EnemyLeech>(); });
+        Make(DummyPrefabPath, "Target Dummy", go => TargetDummy.Create(go));
+        AssetDatabase.SaveAssets();
+    }
+
+    static void Mat(string resource, string shader)
+    {
+        string path = "Assets/Resources/" + resource + ".mat";
+        if (AssetDatabase.LoadAssetAtPath<Material>(path) != null) return;
+        var m = new Material(Shader.Find(shader)) { name = Path.GetFileNameWithoutExtension(path) };
+        if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", Color.white);
+        if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.25f);
+        AssetDatabase.CreateAsset(m, path);
+    }
+
+    static void Make(string path, string name, System.Action<GameObject> setup)
+    {
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(path) != null) { Debug.Log("[Enemies] prefab already exists (delete it to rebuild): " + path); return; }
+        var go = new GameObject(name);
+        try
+        {
+            setup(go);
+            PrefabUtility.SaveAsPrefabAsset(go, path);
+            Debug.Log("[Enemies] created " + path);
+        }
+        finally { Object.DestroyImmediate(go); }
+    }
+
     // ---------------------------------------------------------------- E3 leech
 
     const string LeechMat = "Assets/Resources/Enemies/LeechFlesh.mat";
@@ -82,10 +133,10 @@ public static class EnemyBuilder
     public static void AddLeechHole()
     {
         BuildLeechMaterial();
-        var go = new GameObject("Leech Hole");
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(LeechPrefabPath) == null) MakePrefabs();
+        var go = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(LeechPrefabPath));
         var sv = SceneView.lastActiveSceneView;
         go.transform.position = sv != null ? sv.pivot : Vector3.zero;
-        go.AddComponent<EnemyLeech>();
         Undo.RegisterCreatedObjectUndo(go, "Add Leech Hole");
         Selection.activeGameObject = go;
     }

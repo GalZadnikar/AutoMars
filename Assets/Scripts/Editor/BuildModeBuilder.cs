@@ -45,6 +45,8 @@ public static class BuildModeBuilder
 
         var bayDef = AssetDatabase.LoadAssetAtPath<BuildingDef>(DefFolder + "/Build_DroneBay.asset");
         if (bayDef != null && bayDef.prefab != null) defs.Add(bayDef);
+        var tradeDef = AssetDatabase.LoadAssetAtPath<BuildingDef>(DefFolder + "/Build_TradePost.asset");   // builder 14
+        if (tradeDef != null && tradeDef.prefab != null) defs.Add(tradeDef);
 
         // 4. materials (Sprites/Default = unlit, transparent, vertex colours)
         var ghostMat = SpriteMaterial("BuildGhost", null);
@@ -286,7 +288,7 @@ public static class BuildModeBuilder
 
         // tabs: PLAYER (player + pipe upgrades) | BUILD (buildings with 3D previews)
         string[] tabNames = { "PLAYER", "BUILD" };
-        string[] tabSubs = { "Level up to get a longer pipe, better stats and skill points for the tree", "Pick a building, then place it on the map" };
+        string[] tabSubs = { "Level up to get a longer pipe, better stats and skill points for the tree", "Tap a building to place it  ·  faded = not enough materials" };
         bm.tabButtons = new Button[tabNames.Length];
         bm.tabPages = new GameObject[tabNames.Length];
         for (int i = 0; i < tabNames.Length; i++)
@@ -334,23 +336,29 @@ public static class BuildModeBuilder
         bm.cardTemplate = CardTemplate(cat, hex);
 
         var buildPage = bm.tabPages[1].transform;
-        bm.cardRow = CardRow("Cards", buildPage, 46, 330);
+        bm.cardRow = CardGrid("Cards", buildPage, 44, H - 172 - 44 - 18);
         bm.buildingCardTemplate = BuildingCardTemplate(cat, hex);
 
-        // ---------- placement ----------
-        var place = Panel("Placement", root, new Vector2(1120f, 172f));
+        // ---------- placement: title + status, building chips (switch), ROTATE / EXIT / PLACE ----------
+        const float PW = 1500f, PH = 236f;
+        var place = Panel("Placement", root, new Vector2(PW, PH));
         bm.placePanel = place.gameObject;
-        bm.placeTitle = Txt("Title", place, -300, 16, 480, 50, "CHARGING STATION", 36, WorkshopTheme.Orange, TextAlignmentOptions.Left);
-        bm.placeStatus = Txt("Status", place, -300, 70, 480, 84, "", 24, Color.white, TextAlignmentOptions.TopLeft, FontStyles.Normal);
-        bm.placeStatus.enableAutoSizing = true; bm.placeStatus.fontSizeMin = 16; bm.placeStatus.fontSizeMax = 24;
-        bm.rotateButton = Btn("Rotate", place, "ROTATE", WorkshopTheme.ButtonOff, Color.white, 28, new Vector2(0.5f, 1f), new Vector2(90f, -90f), new Vector2(160f, 116f), new Vector2(0.5f, 0.5f));
-        bm.cancelButton = Btn("Back", place, "BACK", WorkshopTheme.ButtonOff, Color.white, 28, new Vector2(0.5f, 1f), new Vector2(268f, -90f), new Vector2(160f, 116f), new Vector2(0.5f, 0.5f));
-        bm.placeButton = Btn("Place", place, "PLACE", WorkshopTheme.ButtonGreen, Color.white, 38, new Vector2(0.5f, 1f), new Vector2(455f, -90f), new Vector2(190f, 124f), new Vector2(0.5f, 0.5f));
+        float left = -PW * 0.5f;
+        bm.placeTitle = Txt("Title", place, left + 24f + 210f, 12, 420, 44, "CHARGING STATION", 32, WorkshopTheme.Orange, TextAlignmentOptions.Left);
+        bm.placeTitle.enableAutoSizing = true; bm.placeTitle.fontSizeMin = 20; bm.placeTitle.fontSizeMax = 32;
+        bm.placeStatus = Txt("Status", place, left + 460f + 260f, 12, 520, 44, "", 22, Color.white, TextAlignmentOptions.Left, FontStyles.Normal);
+        bm.placeStatus.enableAutoSizing = true; bm.placeStatus.fontSizeMin = 14; bm.placeStatus.fontSizeMax = 22;
+        bm.chipRow = CardRow("Chips", place, 62, 162, left + 12f + 470f, 940f, 12f, 4f);
+        bm.chipTemplate = ChipTemplate(place, hex);
+        bm.rotateButton = Btn("Rotate", place, "ROTATE", WorkshopTheme.ButtonOff, Color.white, 28, new Vector2(0.5f, 1f), new Vector2(326f, -136f), new Vector2(140f, 150f), new Vector2(0.5f, 0.5f));
+        bm.cancelButton = Btn("Exit", place, "EXIT", WorkshopTheme.ButtonOff, Color.white, 28, new Vector2(0.5f, 1f), new Vector2(482f, -136f), new Vector2(140f, 150f), new Vector2(0.5f, 0.5f));
+        bm.placeButton = Btn("Place", place, "PLACE", WorkshopTheme.ButtonGreen, Color.white, 38, new Vector2(0.5f, 1f), new Vector2(650f, -136f), new Vector2(180f, 150f), new Vector2(0.5f, 0.5f));
+        AddImage(R("Divider", place, 245f, 62f, 3f, 150f), new Color(1f, 1f, 1f, 0.08f), false);
 
         // ---------- hint ----------
         var hintRt = NewRect("Hint", root);
         hintRt.anchorMin = hintRt.anchorMax = hintRt.pivot = new Vector2(0.5f, 0f);
-        hintRt.anchoredPosition = new Vector2(0f, 210f);   // above the placement panel
+        hintRt.anchoredPosition = new Vector2(0f, 276f);   // above the placement panel
         hintRt.sizeDelta = new Vector2(1300f, 50f);
         bm.hintText = AddText(hintRt, "Walk to move the blueprint. It snaps to the grid.", 30, Color.white);
         bm.hintText.outlineWidth = 0.25f;
@@ -364,19 +372,19 @@ public static class BuildModeBuilder
 
     // left-aligned row of cards (same inset as the panel's text)
     // Scrolls sideways (drag) once there are more cards than fit; the returned content row is where cards get added.
-    static RectTransform CardRow(string name, Transform parent, float yTop, float h = 168f)
+    static RectTransform CardRow(string name, Transform parent, float yTop, float h = 168f, float x = 0f, float w = 1090f, float spacing = 18f, float pad = 13f)
     {
-        var view = R(name + " View", parent, 0, yTop, 1090, h);
+        var view = R(name + " View", parent, x, yTop, w, h);
         view.gameObject.AddComponent<RectMask2D>();
         AddImage(view, new Color(0f, 0f, 0f, 0f));   // invisible, but takes drags in the gaps between cards
         var row = NewRect(name, view);
         row.anchorMin = new Vector2(0f, 0f); row.anchorMax = new Vector2(0f, 1f);
         row.pivot = new Vector2(0f, 0.5f);
         row.anchoredPosition = Vector2.zero;
-        row.sizeDelta = new Vector2(1090f, 0f);
+        row.sizeDelta = new Vector2(w, 0f);
         var hl = row.gameObject.AddComponent<HorizontalLayoutGroup>();
-        hl.spacing = 18; hl.childAlignment = TextAnchor.MiddleLeft;
-        hl.padding = new RectOffset(13, 13, 0, 0);
+        hl.spacing = spacing; hl.childAlignment = TextAnchor.MiddleLeft;
+        hl.padding = new RectOffset((int)pad, (int)pad, 0, 0);
         hl.childControlWidth = false; hl.childControlHeight = false;
         hl.childForceExpandWidth = false; hl.childForceExpandHeight = false;
         var fit = row.gameObject.AddComponent<ContentSizeFitter>();
@@ -389,6 +397,66 @@ public static class BuildModeBuilder
         sr.inertia = true; sr.decelerationRate = 0.1f;
         sr.scrollSensitivity = 30f;
         return row;
+    }
+
+    // BUILD tab: grid of small tiles, 5 per row, scrolls up/down when there are more rows than fit
+    public const float TileW = 200f, TileH = 206f;
+    static RectTransform CardGrid(string name, Transform parent, float yTop, float h)
+    {
+        const float w = 1090f;
+        var view = R(name + " View", parent, 0, yTop, w, h);
+        view.gameObject.AddComponent<RectMask2D>();
+        AddImage(view, new Color(0f, 0f, 0f, 0f));   // takes drags in the gaps
+        var grid = NewRect(name, view);
+        grid.anchorMin = new Vector2(0f, 1f); grid.anchorMax = new Vector2(1f, 1f);
+        grid.pivot = new Vector2(0.5f, 1f);
+        grid.anchoredPosition = Vector2.zero;
+        grid.sizeDelta = Vector2.zero;
+        var gl = grid.gameObject.AddComponent<GridLayoutGroup>();
+        gl.cellSize = new Vector2(TileW, TileH);
+        gl.spacing = new Vector2(16f, 16f);
+        gl.padding = new RectOffset(13, 13, 0, 8);
+        gl.startCorner = GridLayoutGroup.Corner.UpperLeft;
+        gl.startAxis = GridLayoutGroup.Axis.Horizontal;
+        gl.childAlignment = TextAnchor.UpperLeft;
+        gl.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+        gl.constraintCount = 5;
+        var fit = grid.gameObject.AddComponent<ContentSizeFitter>();
+        fit.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        var sr = view.gameObject.AddComponent<ScrollRect>();
+        sr.viewport = view; sr.content = grid;
+        sr.horizontal = false; sr.vertical = true;
+        sr.movementType = ScrollRect.MovementType.Clamped;
+        sr.inertia = true; sr.decelerationRate = 0.1f;
+        sr.scrollSensitivity = 30f;
+        return grid;
+    }
+
+    // bottom-bar chip in build mode: hex glyph + size, name, cost
+    static BuildChip ChipTemplate(Transform parent, Sprite hex)
+    {
+        var rt = R("ChipTemplate", parent, 0, 0, 172, 150);
+        var bg = AddImage(rt, WorkshopTheme.Panel);
+        var chip = rt.gameObject.AddComponent<BuildChip>();
+        chip.background = bg;
+        chip.group = rt.gameObject.AddComponent<CanvasGroup>();
+        chip.button = rt.gameObject.AddComponent<Button>();
+        chip.button.targetGraphic = bg;
+        var cb = chip.button.colors; cb.pressedColor = new Color(0.78f, 0.78f, 0.78f); chip.button.colors = cb;
+
+        var ic = Place(NewRect("Badge", rt), new Vector2(0f, 1f), new Vector2(32f, -28f), new Vector2(46f, 40f));
+        chip.icon = AddImage(ic, WorkshopTheme.Orange, false);
+        chip.icon.sprite = hex; chip.icon.preserveAspect = true;
+        var g = NewRect("Glyph", ic); Stretch(g);
+        chip.glyph = AddText(g, "C", 24, WorkshopTheme.DarkText);
+        chip.infoText = Txt("Size", rt, 36, 12, 90, 30, "3×3", 20, WorkshopTheme.Muted, TextAlignmentOptions.Right, FontStyles.Normal);
+
+        chip.nameText = Txt("Name", rt, 0, 54, 156, 56, "CHARGING STATION", 21, Color.white, TextAlignmentOptions.TopLeft);
+        chip.nameText.enableAutoSizing = true; chip.nameText.fontSizeMin = 14; chip.nameText.fontSizeMax = 21;
+        chip.costText = Txt("Cost", rt, 0, 114, 156, 28, "40 MATS", 22, WorkshopTheme.Yellow, TextAlignmentOptions.Left);
+        rt.gameObject.SetActive(false);
+        return chip;
     }
 
     static RectTransform Panel(string name, Transform parent, Vector2 size)
@@ -428,13 +496,16 @@ public static class BuildModeBuilder
     // building card: spinning 3D model on top, name / size / build time / description, cost at the bottom
     static BuildCard BuildingCardTemplate(Transform parent, Sprite hex)
     {
-        var rt = R("BuildingCardTemplate", parent, 0, 0, 250, 322);
+        const float W = TileW, PV = 118f;
+        var rt = R("BuildingCardTemplate", parent, 0, 0, W, TileH);
         var bg = AddImage(rt, WorkshopTheme.Panel);
         var card = rt.gameObject.AddComponent<BuildCard>();
+        card.compact = true;
         card.button = rt.gameObject.AddComponent<Button>();
         card.button.targetGraphic = bg;
+        rt.gameObject.AddComponent<CanvasGroup>();
 
-        var pv = R("PreviewBg", rt, 0, 0, 250, 172);
+        var pv = R("PreviewBg", rt, 0, 0, W, PV);
         AddImage(pv, WorkshopTheme.PanelDark, false);
         var img = NewRect("Preview", pv); Stretch(img);
         var raw = img.gameObject.AddComponent<RawImage>();
@@ -447,23 +518,23 @@ public static class BuildModeBuilder
         mp.fillIntensity = 2.5f;
         mp.autoSpin = 24f;
         mp.startYaw = -30f;
-        mp.maxTextureSize = 512;
+        mp.maxTextureSize = 384;
         card.preview = mp;
 
         // colour bar under the preview + small hex badge with the glyph
-        var bar = R("ColorBar", rt, 0, 172, 250, 6);
+        var bar = R("ColorBar", rt, 0, PV, W, 5);
         card.icon = AddImage(bar, WorkshopTheme.Orange, false);
-        var ic = Place(NewRect("Badge", rt), new Vector2(0f, 1f), new Vector2(28f, -26f), new Vector2(42f, 37f));
+        var ic = Place(NewRect("Badge", rt), new Vector2(0f, 1f), new Vector2(22f, -20f), new Vector2(34f, 30f));
         var badge = AddImage(ic, WorkshopTheme.Orange, false);
         badge.sprite = hex; badge.preserveAspect = true;
         var g = NewRect("Glyph", ic); Stretch(g);
-        card.glyph = AddText(g, "C", 24, WorkshopTheme.DarkText);
+        card.glyph = AddText(g, "C", 19, WorkshopTheme.DarkText);
         card.badge = badge;
 
-        card.nameText = Txt("Name", rt, 0, 184, 228, 32, "CHARGING STATION", 24, Color.white, TextAlignmentOptions.Left);
-        card.nameText.enableAutoSizing = true; card.nameText.fontSizeMin = 15; card.nameText.fontSizeMax = 24;
-        card.infoText = Txt("Info", rt, 0, 218, 228, 66, "3×3 tiles", 16, WorkshopTheme.Muted, TextAlignmentOptions.TopLeft, FontStyles.Normal);
-        card.costText = Txt("Cost", rt, 0, 286, 228, 30, "40 MATERIALS", 22, WorkshopTheme.Yellow, TextAlignmentOptions.Left);
+        card.nameText = Txt("Name", rt, 0, PV + 9, W - 18, 28, "CHARGING STATION", 20, Color.white, TextAlignmentOptions.Left);
+        card.nameText.enableAutoSizing = true; card.nameText.fontSizeMin = 13; card.nameText.fontSizeMax = 20;
+        card.infoText = Txt("Info", rt, 0, PV + 38, W - 18, 22, "3×3  ·  5s", 16, WorkshopTheme.Muted, TextAlignmentOptions.Left, FontStyles.Normal);
+        card.costText = Txt("Cost", rt, 0, PV + 60, W - 18, 26, "40 MATERIALS", 19, WorkshopTheme.Yellow, TextAlignmentOptions.Left);
         rt.gameObject.SetActive(false);
         return card;
     }

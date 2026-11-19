@@ -6,16 +6,18 @@ using UnityEngine;
 /// combat drone comes within `detectRange` it attacks the current target; if the target leaves `loseRange` (or the
 /// leash around home) it switches to the nearest other target, otherwise flies home and calms down.
 /// Same flight idea as CombatDrone: the root stays on the ground, the model hovers above it.
-/// Broken / dead bots and a knocked-out player are not targets. Spawn with EnemyDrone.Spawn(pos, home) or an EnemySpawner.
+/// Broken / dead bots and a knocked-out player are not targets. Spawn with EnemyDrone.Spawn(pos, home) or an EnemySpawner,
+/// or drag Assets/Resources/Enemies/Enemy Drone.prefab into the scene (home = where it stands at start).
 [RequireComponent(typeof(Health))]
 public class EnemyDrone : MonoBehaviour
 {
     public static readonly List<EnemyDrone> All = new List<EnemyDrone>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    static void ResetStatics() { All.Clear(); lit = null; unlit = null; }
+    static void ResetStatics() { All.Clear(); }
 
     [Header("Home")]
+    [Tooltip("Patrol centre. (0,0,0) = where it stands when the game starts")]
     public Vector3 home;
     [Tooltip("Patrols inside this radius")]
     public float homeRadius = 10f;
@@ -54,20 +56,39 @@ public class EnemyDrone : MonoBehaviour
     public Health Health { get; private set; }
 
     ShotSpec spec;
-    Transform model;
+    [SerializeField, HideInInspector] Transform model;   // built once (in code or when the prefab is made) and saved
     Vector3 modelBase, patrolTarget, lastPos, smoothVel;
     float hover, phase, fireT, scanT, patrolWait, recoil, losT;
     bool hasLos = true;
-    static Material lit, unlit;
 
     const string ModelResource = "Enemies/EnemyDroneModel";
+    public const string PrefabResource = "Enemies/Enemy Drone";
 
     /// Builds an enemy drone on the ground at `pos`, with `home` as its post.
     public static EnemyDrone Spawn(Vector3 pos, Vector3? home = null)
     {
-        var go = new GameObject("Enemy Drone");
         pos.y = GroundUtil.Height(pos, pos.y);
-        go.transform.position = pos;
+        EnemyDrone d;
+        var prefab = Resources.Load<GameObject>(PrefabResource);
+        if (prefab != null)
+        {
+            var inst = Instantiate(prefab, pos, Quaternion.identity);
+            inst.name = "Enemy Drone";
+            d = inst.GetComponent<EnemyDrone>();
+        }
+        else
+        {
+            var go = new GameObject("Enemy Drone");
+            go.transform.position = pos;
+            d = Create(go);
+        }
+        d.home = home ?? pos;
+        return d;
+    }
+
+    /// Adds and sets up all components on `go` (Spawn without a prefab, and the prefab builder in Edit mode).
+    public static EnemyDrone Create(GameObject go)
+    {
         var h = go.AddComponent<Health>();
         h.SetTeam(Team.Enemy);
         h.SetMax(40f);
@@ -79,7 +100,6 @@ public class EnemyDrone : MonoBehaviour
         dfx.size = 1.6f;
         dfx.color = new Color(1f, 0.35f, 0.2f);
         var d = go.AddComponent<EnemyDrone>();
-        d.home = home ?? pos;
         d.Build();
         return d;
     }
@@ -94,6 +114,9 @@ public class EnemyDrone : MonoBehaviour
         phase = Random.value * 10f;
         lastPos = transform.position;
         if (home == Vector3.zero) home = transform.position;
+        if (model == null) model = transform.Find("Model");
+        if (model == null) Build();
+        modelBase = Vector3.zero;
     }
 
     void OnEnable() { if (!All.Contains(this)) All.Add(this); }
@@ -109,10 +132,10 @@ public class EnemyDrone : MonoBehaviour
 
     // ------------------------------------------------------------------ visuals
 
-    void Build()
+    /// Builds the look (model or a primitive quadcopter + red eye). Does nothing if it is already built.
+    public void Build()
     {
-        if (lit == null) lit = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-        if (unlit == null) unlit = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+        if (model != null) return;
         model = new GameObject("Model").transform;
         model.SetParent(transform, false);
 
@@ -120,8 +143,9 @@ public class EnemyDrone : MonoBehaviour
         if (src != null)
         {
             var mesh = Instantiate(src, model);
-            foreach (var c in mesh.GetComponentsInChildren<Collider>()) Destroy(c);
-            foreach (var mb in mesh.GetComponentsInChildren<MonoBehaviour>()) Destroy(mb);
+            mesh.name = "Mesh";
+            foreach (var c in mesh.GetComponentsInChildren<Collider>()) EnemyParts.Kill(c);
+            foreach (var mb in mesh.GetComponentsInChildren<MonoBehaviour>()) EnemyParts.Kill(mb);
             // measure at the model's origin, then convert the (world-space) bounds centre into model space;
             // using the world centre directly offset the mesh by the spawn position, so it swung around the
             // root whenever the drone turned (e.g. to face the player when attacking)
@@ -137,23 +161,22 @@ public class EnemyDrone : MonoBehaviour
             mesh.transform.localRotation = rot;
             mesh.transform.localPosition = -(rot * ctr) * s;
             // tint it red so it reads as hostile
-            var mpb = new MaterialPropertyBlock();
-            mpb.SetColor("_BaseColor", new Color(1f, 0.45f, 0.4f));
-            foreach (var r in mesh.GetComponentsInChildren<Renderer>()) r.SetPropertyBlock(mpb);
+            EnemyParts.Tint(mesh, new Color(1f, 0.45f, 0.4f), true);
         }
         else
         {
             // fallback when the model resource doesn't exist: a simple hostile quadcopter
-            Part(PrimitiveType.Sphere, Vector3.zero, new Vector3(0.8f, 0.45f, 0.9f), new Color(0.4f, 0.1f, 0.1f), lit);
+            Part(PrimitiveType.Sphere, Vector3.zero, new Vector3(0.8f, 0.45f, 0.9f), new Color(0.4f, 0.1f, 0.1f), false);
             for (int i = 0; i < 4; i++)
             {
                 float x = i % 2 == 0 ? -0.6f : 0.6f, z = i < 2 ? -0.5f : 0.5f;
-                Part(PrimitiveType.Cylinder, new Vector3(x, 0.1f, z), new Vector3(0.5f, 0.02f, 0.5f), new Color(0.15f, 0.15f, 0.17f), lit);
+                Part(PrimitiveType.Cylinder, new Vector3(x, 0.1f, z), new Vector3(0.5f, 0.02f, 0.5f), new Color(0.15f, 0.15f, 0.17f), false);
             }
         }
         // a red "eye" at the front
-        Part(PrimitiveType.Sphere, new Vector3(0f, -0.1f, 0.6f), Vector3.one * 0.22f, new Color(1f, 0.15f, 0.1f), unlit);
-        modelBase = model.localPosition;
+        Part(PrimitiveType.Sphere, new Vector3(0f, -0.1f, 0.6f), Vector3.one * 0.22f, new Color(1f, 0.15f, 0.1f), true).name = "Eye";
+        modelBase = Vector3.zero;
+        model.localPosition = new Vector3(0f, hoverHeight, 0f);   // hovering already in the Scene view (Play animates it)
     }
 
     static Bounds BoundsOf(GameObject go)
@@ -165,19 +188,8 @@ public class EnemyDrone : MonoBehaviour
         return b;
     }
 
-    void Part(PrimitiveType type, Vector3 pos, Vector3 scale, Color c, Material m)
-    {
-        var go = GameObject.CreatePrimitive(type);
-        Destroy(go.GetComponent<Collider>());
-        go.transform.SetParent(model, false);
-        go.transform.localPosition = pos;
-        go.transform.localScale = scale;
-        var r = go.GetComponent<MeshRenderer>();
-        r.sharedMaterial = m;
-        var mpb = new MaterialPropertyBlock();
-        mpb.SetColor("_BaseColor", c);
-        r.SetPropertyBlock(mpb);
-    }
+    Transform Part(PrimitiveType type, Vector3 pos, Vector3 scale, Color c, bool unlitMat)
+        => EnemyParts.Part(model, type, pos, scale, c, unlitMat);
 
     // ------------------------------------------------------------------ brain
 

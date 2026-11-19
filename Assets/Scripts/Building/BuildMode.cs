@@ -9,10 +9,11 @@ using UnityEngine.InputSystem;
 
 /// Base popup + construction. Stand at the base and tap its floating BASE button → a popup with two tabs:
 /// PLAYER (player level, stats, LEVEL UP, UPGRADE TREE = the Workshop with the player's perk tree) and
-/// BUILD (building cards with a spinning 3D preview).
-/// Pick a building → the player stops, the camera goes top-down over a build cursor and the joystick moves that
-/// cursor (WASD in the Editor) → its blueprint snaps to the grid → ROTATE / PLACE / BACK (back = the popup).
-/// Placing flattens the ground, starts a construction site and goes back to the popup (BUILD tab).
+/// BUILD (a grid of small building tiles with a spinning 3D preview; tiles you can't afford are faded).
+/// Pick an affordable building → build mode: the player stops, the camera goes top-down over a build cursor and the
+/// joystick moves that cursor (WASD in the Editor) → its blueprint snaps to the grid. A bar at the bottom lists every
+/// building (name + cost) so you can switch without leaving, plus ROTATE / EXIT / PLACE.
+/// Placing flattens the ground and starts a construction site; you stay in build mode until EXIT.
 public class BuildMode : MonoBehaviour
 {
     /// Debug: building costs nothing.
@@ -48,7 +49,11 @@ public class BuildMode : MonoBehaviour
     [Header("Placement UI")]
     public GameObject placePanel;
     public TMP_Text placeTitle, placeStatus, hintText;
+    [Tooltip("cancelButton = EXIT (leaves build mode)")]
     public Button rotateButton, cancelButton, placeButton;
+    [Tooltip("Bottom bar: one chip per building, tap to switch")]
+    public RectTransform chipRow;
+    public BuildChip chipTemplate;
 
     [Header("Camera + cursor")]
     [Tooltip("Top-down camera that follows the build cursor (enabled only in build mode)")]
@@ -69,6 +74,7 @@ public class BuildMode : MonoBehaviour
     static readonly string[] TabNames = { "PLAYER", "BUILD" };
 
     readonly List<BuildCard> cards = new List<BuildCard>();
+    readonly List<BuildChip> chips = new List<BuildChip>();
     int tab = PlayerTab;
     readonly Dictionary<Vector2Int, BuildGrid.CellState> states = new Dictionary<Vector2Int, BuildGrid.CellState>();
     BuildingDef current;
@@ -93,7 +99,7 @@ public class BuildMode : MonoBehaviour
         menuCloseButton.onClick.AddListener(CloseMenu);
         if (menuBackdrop != null) menuBackdrop.onClick.AddListener(CloseMenu);
         rotateButton.onClick.AddListener(() => { rot = (rot + 1) & 3; dirty = true; });
-        cancelButton.onClick.AddListener(Back);
+        cancelButton.onClick.AddListener(Exit);
         placeButton.onClick.AddListener(Place);
 
         if (tabButtons != null)
@@ -117,6 +123,13 @@ public class BuildMode : MonoBehaviour
             var d = def;
             c.Setup(def, () => Begin(d));
             cards.Add(c);
+            if (chipTemplate != null && chipRow != null)
+            {
+                var chip = Instantiate(chipTemplate, chipRow);
+                chip.gameObject.SetActive(true);
+                chip.Setup(def, () => Switch(d));
+                chips.Add(chip);
+            }
         }
 
         PlayerUpgrades.Ensure();
@@ -207,12 +220,29 @@ public class BuildMode : MonoBehaviour
         RefreshMenu();
     }
 
-    // popup card tapped: leave the popup, switch to the top-down view and start placing
+    // popup card tapped: leave the popup, switch to the top-down view and start placing (only if affordable)
     void Begin(BuildingDef def)
     {
+        if (!Affordable(def)) { NeedMore(def); return; }
         CloseMenu();
         EnterBuild();
         Select(def);
+    }
+
+    // bottom-bar chip tapped while placing: swap the blueprint, keep cursor and rotation
+    void Switch(BuildingDef def)
+    {
+        if (!UIState.BuildMode || def == current) return;
+        if (!Affordable(def)) { NeedMore(def); return; }
+        int keepRot = rot;
+        Select(def);
+        rot = keepRot;
+    }
+
+    static void NeedMore(BuildingDef def)
+    {
+        int have = Economy.Instance != null ? Economy.Instance.materials : 0;
+        GameToast.Show("NEED " + (def.cost - have) + " MORE MATERIALS FOR " + def.displayName.ToUpper(), WorkshopTheme.Red);
     }
 
     void EnterBuild()
@@ -266,13 +296,13 @@ public class BuildMode : MonoBehaviour
         placePanel.SetActive(true);
         hintText.text = "Joystick moves the building. It snaps to the grid.";
         placeTitle.text = def.displayName.ToUpper();
+        RefreshChips();
     }
 
-    // BACK: leave build mode and go back to the base popup (pick another building or close it)
-    void Back()
+    void RefreshChips()
     {
-        Exit();
-        OpenMenu();
+        foreach (var c in chips)
+            if (c != null && c.Def != null) c.SetState(c.Def == current, Affordable(c.Def), FreeBuild);
     }
 
     void ClearGhost()
@@ -397,7 +427,8 @@ public class BuildMode : MonoBehaviour
     void RefreshMenu()
     {
         RefreshPlayer();
-        for (int i = 0; i < cards.Count && i < catalog.Count; i++) cards[i].SetCost(catalog[i].cost, Affordable(catalog[i]));
+        foreach (var c in cards) if (c.Def != null) c.SetCost(c.Def.cost, Affordable(c.Def));
+        if (UIState.BuildMode) RefreshChips();
         if (menuMaterialsText != null)
             menuMaterialsText.text = "MATERIALS  " + (Economy.Instance != null ? Economy.Instance.materials : 0);
     }
@@ -519,8 +550,8 @@ public class BuildMode : MonoBehaviour
         ConstructionSite.Create(current, pos, ghostRot, ghostMaterial, constructionColor);
         GameToast.Show("BUILDING " + current.displayName.ToUpper() + "  (" + current.buildTime.ToString("0.#") + "s)", current.color);
 
-        // construction started: back to the base popup (BUILD tab) to pick the next thing or close
-        Exit();
-        OpenMenu(BuildTab);
+        // stay in build mode: place another one, switch building in the bottom bar, or EXIT
+        dirty = true;
+        RefreshMenu();
     }
 }

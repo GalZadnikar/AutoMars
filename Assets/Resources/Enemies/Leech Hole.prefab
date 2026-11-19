@@ -1,0 +1,102 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &1203567384522529096
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6857344430790492469}
+  - component: {fileID: 2019934578232592731}
+  - component: {fileID: 8341240260792361590}
+  m_Layer: 0
+  m_Name: Leech Hole
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6857344430790492469
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1203567384522529096}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2019934578232592731
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1203567384522529096}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d1b342518fd194eee80728994e909936, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LeechBody
+  thickness: 0.56
+  tipSize: 0.6
+  sides: 10
+  points: 22
+  underground: 1.4
+  fleshColor: {r: 0.93, g: 0.63, b: 0.62, a: 1}
+  bandColor: {r: 0.74, g: 0.4, b: 0.45, a: 1}
+  dirtColor: {r: 0.36, g: 0.22, b: 0.2, a: 1}
+  rimColor: {r: 1, g: 0.42, b: 0.5, a: 1}
+  clawColor: {r: 0.96, g: 0.9, b: 0.8, a: 1}
+  mouthColor: {r: 0.45, g: 0.03, b: 0.06, a: 1}
+  mouthGlow: {r: 0.9, g: 0.12, b: 0.1, a: 1}
+  showInExplored: 1
+  holeRadius: 0.8
+  rimRadius: 1.8
+  rimHeight: 0.22
+  holeSegments: 30
+--- !u!114 &8341240260792361590
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1203567384522529096}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 87df595b0e2af413cb2387a08a053b58, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyLeech
+  reach: 16
+  wakeRange: 14
+  loseTime: 1.5
+  stalkSpeed: 4.2
+  stalkAccel: 5
+  stalkHeight: 0.75
+  emergeTime: 0.45
+  strikeRange: 2.4
+  windupTime: 0.4
+  lungeTime: 0.16
+  lungeReach: 3.6
+  grabRadius: 1.6
+  missRecover: 0.6
+  holdTime: 5
+  liftHeight: 1.8
+  grabDamage: 5
+  holdDamagePerSecond: 3
+  releaseDamage: 30
+  struggleToEscape: 0
+  struggleSecondsPerTap: 0.35
+  retractSpeed: 7
+  cooldown: 12
+  missCooldown: 3
+  maxHP: 100
+  regenerateBetweenStrikes: 0
+  rescueRadius: 25

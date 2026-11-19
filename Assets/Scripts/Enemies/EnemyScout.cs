@@ -5,14 +5,15 @@ using UnityEngine;
 /// Enemy Scout (E1): a small thief. Wanders, goes to the nearest trash pile and steals from it (up to `capacity`),
 /// then idles near where it is. It never attacks: when the player or a combat drone comes close it runs away.
 /// Killed (HP 0): explosion and everything it carries drops as LooseTrash.
-/// Spawn with EnemyScout.Spawn(pos) or with an EnemySpawner. Built in code, no prefab or builder needed.
+/// Spawn with EnemyScout.Spawn(pos) or an EnemySpawner, or drag the prefab Assets/Resources/Enemies/Enemy Scout.prefab into the
+/// scene (made by Tools > Trash Game > 13. Enemies (Make Prefabs)). Spawn() uses that prefab too; without it the scout is built in code.
 [RequireComponent(typeof(Health))]
 public class EnemyScout : MonoBehaviour
 {
     public static readonly List<EnemyScout> All = new List<EnemyScout>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    static void ResetStatics() { All.Clear(); lit = null; }
+    static void ResetStatics() { All.Clear(); }
 
     [Header("Stealing")]
     public int capacity = 10;
@@ -42,21 +43,35 @@ public class EnemyScout : MonoBehaviour
     float wanderWait, stealT, scanT, bob;
     bool leaving;   // walking away from a pile it just robbed (full speed, straight out)
     TrashPile pile;
-    Transform stackRoot;
-    readonly List<Transform> stackItems = new List<Transform>();
-    Transform body;
+    // built once (in code or when the prefab is made) and saved with the object
+    [SerializeField, HideInInspector] Transform body;
+    [SerializeField, HideInInspector] Transform stackRoot;
+    [SerializeField, HideInInspector] List<Transform> stackItems = new List<Transform>();
     Animator anim;
     int animState = -1;
     const string ModelResource = "Enemies/EnemyScoutModel";
-    static Material lit;
+    public const string PrefabResource = "Enemies/Enemy Scout";
 
     /// Builds a scout on the ground at `pos`.
     public static EnemyScout Spawn(Vector3 pos)
     {
-        var go = new GameObject("Enemy Scout");
         pos.y = GroundUtil.Height(pos, pos.y);
-        go.transform.position = pos;
-        go.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+        var rot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+        var prefab = Resources.Load<GameObject>(PrefabResource);
+        if (prefab != null)
+        {
+            var inst = Instantiate(prefab, pos, rot);
+            inst.name = "Enemy Scout";
+            return inst.GetComponent<EnemyScout>();
+        }
+        var go = new GameObject("Enemy Scout");
+        go.transform.SetPositionAndRotation(pos, rot);
+        return Create(go);
+    }
+
+    /// Adds and sets up all components on `go` (Spawn without a prefab, and the prefab builder in Edit mode).
+    public static EnemyScout Create(GameObject go)
+    {
         var h = go.AddComponent<Health>();
         h.SetTeam(Team.Enemy);   // AddComponent already registered it with the default team
         h.SetMax(30f);
@@ -76,6 +91,14 @@ public class EnemyScout : MonoBehaviour
     {
         Health = GetComponent<Health>();
         Health.OnDied += OnDied;
+        if (body == null) body = transform.Find("Body");
+        if (body == null) Build();
+        anim = body.GetComponentInChildren<Animator>();
+        if (stackRoot == null) stackRoot = body.Find("Stolen");
+        stackItems.RemoveAll(t => t == null);
+        if (stackItems.Count == 0 && stackRoot != null) foreach (Transform t in stackRoot) stackItems.Add(t);
+        while (stackRoot != null && stackItems.Count < capacity) AddStackItem(stackItems.Count);
+        ShowStack();
     }
 
     void OnEnable() { if (!All.Contains(this)) All.Add(this); }
@@ -86,6 +109,8 @@ public class EnemyScout : MonoBehaviour
         anchor = transform.position;
         wanderWait = Random.Range(0.5f, 2f);   // a short wander first
         yield return null;   // after Health created its bar, so FogHideable hides that too
+        var old = GetComponent<FogHideable>();   // one saved on the object would not know the HP bar
+        if (old != null) DestroyImmediate(old);
         var fh = gameObject.AddComponent<FogHideable>();
         fh.hide = FogHideable.Mode.WhenNotVisible;
     }
@@ -99,64 +124,54 @@ public class EnemyScout : MonoBehaviour
 
     // ------------------------------------------------------------------ visuals
 
-    void Build()
+    /// Builds the look (model or primitives + the stolen stack). Does nothing if it is already built.
+    public void Build()
     {
-        if (lit == null) lit = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+        if (body != null) return;
         body = new GameObject("Body").transform;
         body.SetParent(transform, false);
+        bool animated = false;
         var src = Resources.Load<GameObject>(ModelResource);   // the player's Scout Bot mesh, made by Tools > Trash Game > 13. Enemies
         if (src != null)
         {
             var mesh = Instantiate(src, body);
+            mesh.name = "Model";
             mesh.transform.localPosition = Vector3.zero;
             mesh.transform.localRotation = Quaternion.identity;
-            foreach (var c in mesh.GetComponentsInChildren<Collider>()) Destroy(c);
-            anim = mesh.GetComponentInChildren<Animator>();
-            var mpb = new MaterialPropertyBlock();
-            mpb.SetColor("_BaseColor", new Color(1f, 0.3f, 0.25f));   // red = hostile
-            foreach (var r in mesh.GetComponentsInChildren<Renderer>()) r.SetPropertyBlock(mpb);
+            foreach (var c in mesh.GetComponentsInChildren<Collider>()) EnemyParts.Kill(c);
+            animated = mesh.GetComponentInChildren<Animator>() != null;
+            EnemyParts.Tint(mesh, new Color(1f, 0.3f, 0.25f), true);   // red = hostile
         }
         else
         {
             // fallback when the model resource doesn't exist: a simple wheeled body
-            Part(body, PrimitiveType.Cube, new Vector3(0f, 0.45f, 0f), new Vector3(0.7f, 0.4f, 0.95f), new Color(0.55f, 0.18f, 0.16f));
-            Part(body, PrimitiveType.Cube, new Vector3(0f, 0.78f, 0.28f), new Vector3(0.45f, 0.3f, 0.4f), new Color(0.3f, 0.3f, 0.33f));
-            Part(body, PrimitiveType.Sphere, new Vector3(0.12f, 0.8f, 0.5f), Vector3.one * 0.11f, new Color(1f, 0.85f, 0.2f));
-            Part(body, PrimitiveType.Sphere, new Vector3(-0.12f, 0.8f, 0.5f), Vector3.one * 0.11f, new Color(1f, 0.85f, 0.2f));
+            EnemyParts.Part(body, PrimitiveType.Cube, new Vector3(0f, 0.45f, 0f), new Vector3(0.7f, 0.4f, 0.95f), new Color(0.55f, 0.18f, 0.16f));
+            EnemyParts.Part(body, PrimitiveType.Cube, new Vector3(0f, 0.78f, 0.28f), new Vector3(0.45f, 0.3f, 0.4f), new Color(0.3f, 0.3f, 0.33f));
+            EnemyParts.Part(body, PrimitiveType.Sphere, new Vector3(0.12f, 0.8f, 0.5f), Vector3.one * 0.11f, new Color(1f, 0.85f, 0.2f));
+            EnemyParts.Part(body, PrimitiveType.Sphere, new Vector3(-0.12f, 0.8f, 0.5f), Vector3.one * 0.11f, new Color(1f, 0.85f, 0.2f));
             for (int i = 0; i < 4; i++)
             {
                 float x = i % 2 == 0 ? -0.42f : 0.42f, z = i < 2 ? -0.3f : 0.3f;
-                var w = Part(body, PrimitiveType.Cylinder, new Vector3(x, 0.2f, z), new Vector3(0.36f, 0.08f, 0.36f), new Color(0.12f, 0.12f, 0.13f));
+                var w = EnemyParts.Part(body, PrimitiveType.Cylinder, new Vector3(x, 0.2f, z), new Vector3(0.36f, 0.08f, 0.36f), new Color(0.12f, 0.12f, 0.13f));
                 w.localRotation = Quaternion.Euler(0f, 0f, 90f);
             }
         }
         // the stolen stack on its back: grows with `carried`
         stackRoot = new GameObject("Stolen").transform;
         stackRoot.SetParent(body, false);
-        stackRoot.localPosition = anim != null ? new Vector3(0f, 0.9f, -0.35f) : new Vector3(0f, 0.68f, -0.22f);
-        for (int i = 0; i < capacity; i++)
-        {
-            var it = Part(stackRoot, PrimitiveType.Cube, new Vector3(0f, i * 0.17f, 0f), new Vector3(0.34f, 0.15f, 0.34f),
-                          new Color(0.45f, 0.4f, 0.33f) * Random.Range(0.8f, 1.15f));
-            it.localRotation = Quaternion.Euler(0f, (i * 67f) % 50f - 25f, 0f);
-            it.gameObject.SetActive(false);
-            stackItems.Add(it);
-        }
+        stackRoot.localPosition = animated ? new Vector3(0f, 0.9f, -0.35f) : new Vector3(0f, 0.68f, -0.22f);
+        stackItems.Clear();
+        for (int i = 0; i < capacity; i++) AddStackItem(i);
     }
 
-    Transform Part(Transform parent, PrimitiveType type, Vector3 pos, Vector3 scale, Color c)
+    void AddStackItem(int i)
     {
-        var go = GameObject.CreatePrimitive(type);
-        Destroy(go.GetComponent<Collider>());
-        go.transform.SetParent(parent, false);
-        go.transform.localPosition = pos;
-        go.transform.localScale = scale;
-        var r = go.GetComponent<MeshRenderer>();
-        r.sharedMaterial = lit;
-        var mpb = new MaterialPropertyBlock();
-        mpb.SetColor("_BaseColor", c);
-        r.SetPropertyBlock(mpb);
-        return go.transform;
+        var it = EnemyParts.Part(stackRoot, PrimitiveType.Cube, new Vector3(0f, i * 0.17f, 0f), new Vector3(0.34f, 0.15f, 0.34f),
+                                 new Color(0.45f, 0.4f, 0.33f) * Random.Range(0.8f, 1.15f));
+        it.name = "Stolen " + i;
+        it.localRotation = Quaternion.Euler(0f, (i * 67f) % 50f - 25f, 0f);
+        it.gameObject.SetActive(false);
+        stackItems.Add(it);
     }
 
     void ShowStack()

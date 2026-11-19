@@ -117,9 +117,19 @@ public class EnemyLeech : MonoBehaviour
     // ---------------------------------------------------------------- spawn / setup
 
     /// Makes a leech hole on the ground at `pos`.
+    public const string PrefabResource = "Enemies/Leech Hole";
+
+    /// Makes a leech hole on the ground at `pos` (from the prefab Assets/Resources/Enemies/Leech Hole.prefab if it exists).
     public static EnemyLeech Spawn(Vector3 pos)
     {
         pos.y = GroundUtil.Height(pos, pos.y);
+        var prefab = Resources.Load<GameObject>(PrefabResource);
+        if (prefab != null)
+        {
+            var inst = Instantiate(prefab, pos, Quaternion.identity);
+            inst.name = "Leech Hole";
+            return inst.GetComponent<EnemyLeech>();
+        }
         var go = new GameObject("Leech Hole");
         go.transform.position = pos;
         return go.AddComponent<EnemyLeech>();
@@ -127,6 +137,12 @@ public class EnemyLeech : MonoBehaviour
 
     void Awake()
     {
+        // the head, tentacle and crater are always made here at runtime; leftovers saved from a Play-mode copy are removed
+        foreach (var n in new[] { "Leech Head", "Tentacle (spline)", "Hole" })
+        {
+            var old = transform.Find(n);
+            if (old != null) DestroyImmediate(old.gameObject);
+        }
         head = new GameObject("Leech Head").transform;
         head.SetParent(transform, false);
         var h = head.gameObject.AddComponent<Health>();
@@ -140,7 +156,8 @@ public class EnemyLeech : MonoBehaviour
         Health.OnDied += Die;
         Health.OnDamaged += OnHurt;
 
-        body = gameObject.AddComponent<LeechBody>();
+        body = GetComponent<LeechBody>();   // the prefab carries one (colours / sizes editable there)
+        if (body == null) body = gameObject.AddComponent<LeechBody>();
         body.Build(head);
 
         headFlat = transform.position;
