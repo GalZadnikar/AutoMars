@@ -1,0 +1,541 @@
+using System.Collections.Generic;
+using TMPro;
+using UnityEngine;
+
+/// SAND PROTOTYPE - a patch of sand that the SuctionGun eats away.
+///
+/// Keeps a grid of points, each with a sand amount 0..1. The mesh is that grid lifted above the ground:
+/// full sand = a puffy layer `sandHeight` tall, sucked-out points drop under the ground and the shader
+/// cuts them away, which leaves soft walls along every cleared path.
+/// The player can't walk where there is more than `blockAmount` sand (SandBlocker).
+[ExecuteAlways]
+[RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
+public class SandField : MonoBehaviour
+{
+    public static readonly List<SandField> All = new List<SandField>();
+
+    [Header("Shape")]
+    public Vector2 size = new Vector2(18f, 18f);
+    [Tooltip("Distance between grid points in metres. Smaller = smoother cuts, more vertices (keep under ~150 points per side)")]
+    public float cellSize = 0.2f;
+    public float sandHeight = 1.2f;
+    [Tooltip("Height of the soft lumps on top")]
+    public float bumpHeight = 0.3f;
+    public float bumpScale = 0.2f;
+    [Tooltip("Radius of the rounded corners (m)")]
+    public float cornerRadius = 3f;
+    [Tooltip("How wobbly the outer border is (m)")]
+    public float edgeWobble = 1.5f;
+    public int seed = 3;
+
+    [Header("Walking")]
+    [Tooltip("The player can't walk where there is more sand than this (0-1)")]
+    [Range(0.05f, 1f)] public float blockAmount = 0.3f;
+
+    [Header("Reward")]
+    [Tooltip("Materials you get for sucking up this whole field (paid out when the tank is emptied at the base)")]
+    public int materialsTotal = 60;
+
+    [Header("Finishing")]
+    [Tooltip("When this little sand is left (0.12 = 12%), the rest is cleared automatically with a puff")]
+    [Range(0f, 0.5f)] public float autoClearLeft = 0.12f;
+    [Tooltip("...or when less than this much sand is left (cubic metres), whichever comes first")]
+    public float autoClearVolume = 1.5f;
+    [Tooltip("Sand under rocks or other objects stays (smooth edges) but doesn't count: clearing all the reachable sand = 100%, and the hidden rest goes with it")]
+    public bool ignoreHiddenSand = true;
+
+    [Header("Label")]
+    public TMP_Text label;
+    [Tooltip("Height of the % label above the top of the sand (m)")]
+    public float labelHeight = 1.8f;
+
+    [Header("Colour Shift (on top of the Sand material)")]
+    [Range(-180f, 180f)] public float hueShift = 0f;
+    [Range(0f, 2f)] public float saturation = 1f;
+    [Range(0f, 2f)] public float brightness = 1f;
+
+    int nx, nz;
+    float sx, sz;
+    Vector3 builtAt;
+    float[] amount, groundY, bump, heights;
+    Vector3[] verts, normals;
+    Color[] colors;
+    Mesh mesh;
+    bool dirty;
+    float initialTotal, total;
+
+    /// 0 = untouched, 1 = everything sucked up.
+    public float Progress => initialTotal > 0f ? Mathf.Clamp01(1f - total / initialTotal) : 1f;
+    Vector2 Origin => new Vector2(builtAt.x - size.x * 0.5f, builtAt.z - size.y * 0.5f);
+
+    // ------------------------------------------------------------------ lifecycle
+
+    void OnEnable()
+    {
+        if (!All.Contains(this)) All.Add(this);
+        LowPolyGround.Rebuilt += OnGroundRebuilt;
+        Build();
+        ApplyColour();
+    }
+
+    void OnDisable()
+    {
+        All.Remove(this);
+        LowPolyGround.Rebuilt -= OnGroundRebuilt;
+    }
+
+    // the ground may build after us when the game starts: sample it again once it's there
+    void Start() { if (amount != null) { SampleGround(); dirty = true; } }
+
+#if UNITY_EDITOR
+    void OnValidate()
+    {
+        UnityEditor.EditorApplication.delayCall += () =>
+        {
+            if (this == null || !isActiveAndEnabled) return;
+            if (!Application.isPlaying) Build();
+            ApplyColour();
+        };
+    }
+#endif
+
+    void OnGroundRebuilt()
+    {
+        if (amount == null) return;
+        SampleGround();
+        dirty = true;
+    }
+
+    void Update()
+    {
+        // moved in the editor: rebuild at the new spot
+        if (!Application.isPlaying && transform.position != builtAt) Build();
+    }
+
+void LateUpdate()
+    {
+        // auto-clear: the last bits shrink away
+        if (fadeFrom != null)
+        {
+            fadeT = Mathf.Min(1f, fadeT + Time.deltaTime / 0.45f);
+            float k = 1f - fadeT * fadeT;
+            for (int i = 0; i < amount.Length; i++) amount[i] = fadeFrom[i] * k;
+            if (fadeT >= 1f) { System.Array.Clear(amount, 0, amount.Length); fadeFrom = null; }
+            dirty = true;
+        }
+        UpdateLabel(false);
+        if (!dirty) return;
+        dirty = false;
+        UpdateMesh();
+    }
+
+    // ------------------------------------------------------------------ finishing, hidden sand, label
+
+    bool cleared;
+    float clearedTime;
+    float[] fadeFrom;
+    float fadeT = 1f;
+    int shownPct = -1;
+    float labelPunch;
+    Vector3 labelBaseScale;
+
+    public bool IsCleared => cleared;
+
+    /// Removes the last bits at once (with puffs). Returns the amount that was left.
+    float AutoClear()
+    {
+        float left = Mathf.Max(0f, total);
+        total = 0f;
+        cleared = true;
+        clearedTime = Time.time;
+        fadeFrom = (float[])amount.Clone();
+        fadeT = 0f;
+        if (Application.isPlaying)
+        {
+            Vector2 o = Origin;
+            int puffs = 0;
+            for (int tries = 0; tries < 600 && puffs < 4; tries++)
+            {
+                int i = Random.Range(0, amount.Length);
+                if (amount[i] < 0.15f) continue;
+                int x = i % nx, z = i / nx;
+                PileClearFX.Play(new Vector3(o.x + x * sx, builtAt.y + groundY[i], o.y + z * sz), 1.3f);
+                puffs++;
+            }
+            if (puffs == 0) PileClearFX.Play(transform.position, Mathf.Max(size.x, size.y) * 0.3f);
+        }
+        return left;
+    }
+
+    bool[] hidden;   // under a rock: stays visible, but isn't sucked and doesn't count
+
+    /// Sand inside / under rocks and other objects can't be reached: mark it so it doesn't count.
+void MarkHiddenSand()
+    {
+        Physics.SyncTransforms();
+        var g = FindFirstObjectByType<LowPolyGround>();
+        hiddenGround = g != null ? g.GetComponent<Collider>() : null;
+        bool backfaces = Physics.queriesHitBackfaces;
+        Physics.queriesHitBackfaces = true;   // a ray from inside a mesh hits its inner faces
+        Vector2 o = Origin;
+        const float margin = 0.5f;              // must be this deep in the rock: the cut edge stays hidden inside it
+        for (int z = 0; z < nz; z++)
+        for (int x = 0; x < nx; x++)
+        {
+            int i = z * nx + x;
+            if (amount[i] <= 0f) continue;
+            // tested at the top of the sand: rocks that lean / get narrower upwards would otherwise show the cut edge
+            var p = new Vector3(o.x + x * sx, builtAt.y + groundY[i] + Mathf.Max(0.4f, sandHeight + bump[i] - 0.1f), o.y + z * sz);
+            if (InsideSolid(p) && InsideSolid(p + new Vector3(margin, 0f, 0f)) && InsideSolid(p - new Vector3(margin, 0f, 0f))
+                && InsideSolid(p + new Vector3(0f, 0f, margin)) && InsideSolid(p - new Vector3(0f, 0f, margin)))
+            {
+                total -= amount[i];
+                hidden[i] = true;
+            }
+        }
+        Physics.queriesHitBackfaces = backfaces;
+        total = Mathf.Max(0f, total);
+    }
+
+    Collider hiddenGround;
+    static readonly RaycastHit[] hitBuf = new RaycastHit[16];
+    static readonly Collider[] overlapBuf = new Collider[16];
+
+    bool Ignore(Collider c) =>
+        c == null || c == hiddenGround || c is CharacterController || (c.attachedRigidbody != null && !c.attachedRigidbody.isKinematic) || c.transform.IsChildOf(transform);
+
+    /// Is this point inside a solid object (rock, building...)?
+    bool InsideSolid(Vector3 p)
+    {
+        // simple shapes (box, sphere, convex mesh): overlap test works from inside
+        int n = Physics.OverlapSphereNonAlloc(p, 0.02f, overlapBuf, ~0, QueryTriggerInteraction.Ignore);
+        for (int k = 0; k < n; k++)
+        {
+            var c = overlapBuf[k];
+            if (Ignore(c)) continue;
+            if (!(c is MeshCollider mc) || mc.convex) return true;
+        }
+        // concave meshes: cast up, if the nearest face we hit faces up too we started inside
+        n = Physics.RaycastNonAlloc(p, Vector3.up, hitBuf, 80f, ~0, QueryTriggerInteraction.Ignore);
+        float best = float.MaxValue;
+        bool inside = false;
+        for (int k = 0; k < n; k++)
+        {
+            if (Ignore(hitBuf[k].collider) || !(hitBuf[k].collider is MeshCollider m) || m.convex) continue;
+            if (hitBuf[k].distance < best) { best = hitBuf[k].distance; inside = hitBuf[k].normal.y > 0f; }
+        }
+        return inside;
+    }
+
+    void PlaceLabel()
+    {
+        if (label == null || groundY == null) return;
+        float gMax = float.MinValue;
+        foreach (var gy in groundY) gMax = Mathf.Max(gMax, gy);
+        label.transform.localPosition = new Vector3(0f, gMax + sandHeight + bumpHeight + labelHeight, 0f);
+        if (labelBaseScale == Vector3.zero) labelBaseScale = label.transform.localScale;
+    }
+
+    void UpdateLabel(bool instant)
+    {
+        if (label == null) return;
+        int pct = cleared ? 100 : Mathf.Clamp(Mathf.FloorToInt(Progress * 100f + 0.0001f), 0, 99);
+        if (pct != shownPct)
+        {
+            if (shownPct >= 0 && !instant) labelPunch = 1f;
+            shownPct = pct;
+            label.text = pct + "%";
+        }
+        bool show = !(cleared && Application.isPlaying && Time.time > clearedTime + 1.5f);
+        if (label.gameObject.activeSelf != show) label.gameObject.SetActive(show);
+        if (labelBaseScale == Vector3.zero) labelBaseScale = label.transform.localScale;
+        if (labelPunch > 0f && Application.isPlaying)
+        {
+            labelPunch = Mathf.MoveTowards(labelPunch, 0f, Time.deltaTime * 6f);
+            label.transform.localScale = labelBaseScale * (1f + 0.25f * labelPunch);
+        }
+    }
+
+    
+// ------------------------------------------------------------------ colour & reward
+
+    static readonly int TopId = Shader.PropertyToID("_ColorTop"), ShadeId = Shader.PropertyToID("_ColorShade"),
+                        DeepId = Shader.PropertyToID("_ColorDeep"), RimId = Shader.PropertyToID("_RimColor");
+    MaterialPropertyBlock mpb;
+
+    /// Re-tints this field (hue / saturation / brightness on top of the Sand material's colours).
+    public void ApplyColour()
+    {
+        var r = GetComponent<MeshRenderer>();
+        if (r == null || r.sharedMaterial == null) return;
+        var m = r.sharedMaterial;
+        if (Mathf.Approximately(hueShift, 0f) && Mathf.Approximately(saturation, 1f) && Mathf.Approximately(brightness, 1f))
+        {
+            r.SetPropertyBlock(null);
+            return;
+        }
+        if (mpb == null) mpb = new MaterialPropertyBlock();
+        mpb.Clear();
+        if (m.HasProperty(TopId)) mpb.SetColor(TopId, Shift(m.GetColor(TopId)));
+        if (m.HasProperty(ShadeId)) mpb.SetColor(ShadeId, Shift(m.GetColor(ShadeId)));
+        if (m.HasProperty(DeepId)) mpb.SetColor(DeepId, Shift(m.GetColor(DeepId)));
+        if (m.HasProperty(RimId)) mpb.SetColor(RimId, Shift(m.GetColor(RimId)));
+        r.SetPropertyBlock(mpb);
+    }
+
+    Color Shift(Color c) => ColorShift.Apply(c, hueShift, saturation, brightness);
+
+    /// Colour for the suction particles (the field's lit sand colour).
+    public Color ParticleColor
+    {
+        get
+        {
+            var r = GetComponent<MeshRenderer>();
+            var m = r != null ? r.sharedMaterial : null;
+            return Shift(m != null && m.HasProperty(TopId) ? m.GetColor(TopId) : new Color(1f, 0.83f, 0.42f));
+        }
+    }
+
+    /// Sand volume of the full field in cubic metres.
+    public float FullVolume => initialTotal * sx * sz * sandHeight;
+    /// Sand volume still left.
+    public float VolumeLeft => Mathf.Max(0f, total) * sx * sz * sandHeight;
+    float MaterialsPerAmount => initialTotal > 0f ? materialsTotal / initialTotal : 0f;
+
+// ------------------------------------------------------------------ building
+
+    [ContextMenu("Rebuild Sand")]
+    public void Build()
+    {
+        cellSize = Mathf.Max(0.05f, cellSize);
+        nx = Mathf.Clamp(Mathf.RoundToInt(size.x / cellSize) + 1, 2, 250);
+        nz = Mathf.Clamp(Mathf.RoundToInt(size.y / cellSize) + 1, 2, 250);
+        sx = size.x / (nx - 1);
+        sz = size.y / (nz - 1);
+        builtAt = transform.position;
+        int n = nx * nz;
+        amount = new float[n]; groundY = new float[n]; bump = new float[n]; heights = new float[n];
+        verts = new Vector3[n]; normals = new Vector3[n]; colors = new Color[n];
+
+        var rnd = new System.Random(seed);
+        float o1 = (float)rnd.NextDouble() * 100f, o2 = (float)rnd.NextDouble() * 100f;
+        float o3 = (float)rnd.NextDouble() * 100f, o4 = (float)rnd.NextDouble() * 100f;
+        Vector2 o = Origin;
+        float R = Mathf.Max(0f, cornerRadius);
+        total = 0f;
+        for (int z = 0; z < nz; z++)
+        for (int x = 0; x < nx; x++)
+        {
+            int i = z * nx + x;
+            float wx = o.x + x * sx, wz = o.y + z * sz;
+            bump[i] = ((Mathf.PerlinNoise(wx * bumpScale + o1, wz * bumpScale + o2) - 0.5f) * 2f
+                     + (Mathf.PerlinNoise(wx * bumpScale * 2.6f + o3, wz * bumpScale * 2.6f + o4) - 0.5f) * 0.6f) * bumpHeight;
+
+            // distance to the (rounded, wobbly) border
+            float ex = Mathf.Min(x * sx, (nx - 1 - x) * sx);
+            float ez = Mathf.Min(z * sz, (nz - 1 - z) * sz);
+            float edge = (ex < R && ez < R) ? R - new Vector2(R - ex, R - ez).magnitude : Mathf.Min(ex, ez);
+            float wob = Mathf.PerlinNoise(wx * 0.18f + o2, wz * 0.18f + o3) * edgeWobble;
+            float a = Mathf.Clamp01((edge - wob - cellSize) / 0.6f);
+            amount[i] = a;
+            total += a;
+        }
+        SampleGround();
+        hidden = new bool[amount.Length];
+        if (ignoreHiddenSand) MarkHiddenSand();
+        initialTotal = total;
+        cleared = false;
+        fadeFrom = null;
+        BuildMesh();
+        PlaceLabel();
+        shownPct = -1;
+        UpdateLabel(true);
+    }
+
+    void SampleGround()
+    {
+        Vector2 o = Origin;
+        for (int z = 0; z < nz; z++)
+        for (int x = 0; x < nx; x++)
+        {
+            var p = new Vector3(o.x + x * sx, 0f, o.y + z * sz);
+            groundY[z * nx + x] = GroundUtil.Height(p, builtAt.y) - builtAt.y;
+        }
+    }
+
+    void BuildMesh()
+    {
+        if (mesh == null)
+        {
+            mesh = new Mesh { name = "SandField", hideFlags = HideFlags.DontSave };
+            mesh.MarkDynamic();
+        }
+        mesh.Clear();
+        mesh.indexFormat = nx * nz > 65000 ? UnityEngine.Rendering.IndexFormat.UInt32 : UnityEngine.Rendering.IndexFormat.UInt16;
+        UpdateMesh(false);
+        mesh.vertices = verts;
+        var tris = new int[(nx - 1) * (nz - 1) * 6];
+        int t = 0;
+        for (int z = 0; z < nz - 1; z++)
+        for (int x = 0; x < nx - 1; x++)
+        {
+            int a = z * nx + x, b = a + nx, c = b + 1, d = a + 1;
+            tris[t++] = a; tris[t++] = b; tris[t++] = c;
+            tris[t++] = a; tris[t++] = c; tris[t++] = d;
+        }
+        mesh.triangles = tris;
+        mesh.normals = normals;
+        mesh.colors = colors;
+        float gMin = float.MaxValue, gMax = float.MinValue;
+        foreach (var g in groundY) { gMin = Mathf.Min(gMin, g); gMax = Mathf.Max(gMax, g); }
+        float top = gMax + sandHeight + bumpHeight * 2f + 0.5f, bottom = gMin - 1f;
+        mesh.bounds = new Bounds(new Vector3(0f, (top + bottom) * 0.5f, 0f), new Vector3(size.x, top - bottom, size.y));
+        GetComponent<MeshFilter>().sharedMesh = mesh;
+    }
+
+    void UpdateMesh(bool upload = true)
+    {
+        Vector2 o = Origin;
+        float ox = o.x - builtAt.x, oz = o.y - builtAt.z;
+        for (int z = 0; z < nz; z++)
+        for (int x = 0; x < nx; x++)
+        {
+            int i = z * nx + x;
+            float a = amount[i];
+            float h = a > 0.001f ? Mathf.Max(0.2f, sandHeight + bump[i]) * a * (2f - a) : -0.25f;
+            heights[i] = groundY[i] + h;
+            verts[i] = new Vector3(ox + x * sx, heights[i], oz + z * sz);
+            float depth = Mathf.Clamp01(h / (sandHeight * 0.7f));
+            colors[i] = new Color(0.2f + 0.8f * depth, 0f, 0f, a);
+        }
+        for (int z = 0; z < nz; z++)
+        for (int x = 0; x < nx; x++)
+        {
+            int i = z * nx + x;
+            float hl = heights[z * nx + Mathf.Max(0, x - 1)], hr = heights[z * nx + Mathf.Min(nx - 1, x + 1)];
+            float hd = heights[Mathf.Max(0, z - 1) * nx + x], hu = heights[Mathf.Min(nz - 1, z + 1) * nx + x];
+            normals[i] = new Vector3(-(hr - hl) / (2f * sx), 1f, -(hu - hd) / (2f * sz)).normalized;
+        }
+        if (!upload || mesh == null) return;
+        mesh.vertices = verts;
+        mesh.normals = normals;
+        mesh.colors = colors;
+    }
+
+    // ------------------------------------------------------------------ queries
+
+    bool Cell(Vector3 p, out int i, out float fx, out float fz)
+    {
+        i = 0; fx = fz = 0f;
+        if (amount == null) return false;
+        Vector2 o = Origin;
+        float gx = (p.x - o.x) / sx, gz = (p.z - o.y) / sz;
+        if (gx < 0f || gz < 0f || gx > nx - 1 || gz > nz - 1) return false;
+        int x0 = Mathf.Min((int)gx, nx - 2), z0 = Mathf.Min((int)gz, nz - 2);
+        fx = gx - x0; fz = gz - z0;
+        i = z0 * nx + x0;
+        return true;
+    }
+
+    float Bilinear(float[] f, int i, float fx, float fz)
+    {
+        float a = Mathf.Lerp(f[i], f[i + 1], fx);
+        float b = Mathf.Lerp(f[i + nx], f[i + nx + 1], fx);
+        return Mathf.Lerp(a, b, fz);
+    }
+
+    /// Sand amount 0..1 at a world position (0 outside the field).
+    public float AmountAt(Vector3 p) => !cleared && Cell(p, out int i, out float fx, out float fz) ? Bilinear(amount, i, fx, fz) : 0f;
+
+    /// World height of the sand surface (only meaningful where AmountAt > 0).
+    public float SurfaceY(Vector3 p) => Cell(p, out int i, out float fx, out float fz) ? Bilinear(heights, i, fx, fz) + builtAt.y : p.y;
+
+    /// Horizontal distance from a point to the field's rectangle (0 inside).
+    public float DistanceTo(Vector3 p)
+    {
+        Vector2 o = Origin;
+        float dx = Mathf.Max(0f, Mathf.Max(o.x - p.x, p.x - (o.x + size.x)));
+        float dz = Mathf.Max(0f, Mathf.Max(o.y - p.z, p.z - (o.y + size.y)));
+        return Mathf.Sqrt(dx * dx + dz * dz);
+    }
+
+    /// Removes sand in a cone (apex `from`, pointing along `dir`). Points near the apex and on the centre line go fastest.
+    /// Returns the removed volume in cubic metres.
+    public float Suck(Vector3 from, Vector3 dir, float range, float halfAngle, float rate, float dt, out float materials)
+    {
+        materials = 0f;
+        if (amount == null || cleared || rate <= 0f || dt <= 0f) return 0f;
+        Vector2 o = Origin;
+        int x0 = Mathf.Max(0, Mathf.FloorToInt((from.x - range - o.x) / sx));
+        int x1 = Mathf.Min(nx - 1, Mathf.CeilToInt((from.x + range - o.x) / sx));
+        int z0 = Mathf.Max(0, Mathf.FloorToInt((from.z - range - o.y) / sz));
+        int z1 = Mathf.Min(nz - 1, Mathf.CeilToInt((from.z + range - o.y) / sz));
+        if (x0 > x1 || z0 > z1) return 0f;
+
+        var f = new Vector2(dir.x, dir.z).normalized;
+        float cosHalf = Mathf.Cos(halfAngle * Mathf.Deg2Rad);
+        float r2 = range * range;
+        float removed = 0f;
+        for (int z = z0; z <= z1; z++)
+        {
+            float dz = o.y + z * sz - from.z;
+            for (int x = x0; x <= x1; x++)
+            {
+                int i = z * nx + x;
+                if (amount[i] <= 0f || hidden[i]) continue;
+                float dx = o.x + x * sx - from.x;
+                float d2 = dx * dx + dz * dz;
+                if (d2 > r2) continue;
+                float d = Mathf.Sqrt(d2);
+                float cos = d > 0.001f ? (dx * f.x + dz * f.y) / d : 1f;
+                if (cos < cosHalf) continue;
+                float side = Mathf.InverseLerp(1f, cosHalf, cos);              // 0 on the centre line, 1 at the cone edge
+                // strongest near the nozzle and on the centre line, fading to 0 at the cone's sides and far end -> round, smooth bites
+                float far = d / range;
+                float k = Mathf.Lerp(1f, 0.3f, far) * Mathf.Clamp01((1f - far) * 5f) * (1f - side * side);
+                float take = Mathf.Min(amount[i], rate * dt * k);
+                amount[i] -= take;
+                if (amount[i] < 0.02f) { take += amount[i]; amount[i] = 0f; }
+                removed += take;
+            }
+        }
+        if (removed <= 0f) return 0f;
+        total -= removed;
+        if (total > 0f && (total <= initialTotal * autoClearLeft || total * sx * sz * sandHeight <= autoClearVolume)) removed += AutoClear();
+        materials = removed * MaterialsPerAmount;
+        dirty = true;
+        return removed * sx * sz * sandHeight;
+    }
+
+    // ------------------------------------------------------------------ static helpers
+
+    /// True if any sand field is too deep to walk through at this point.
+    public static bool BlockedAt(Vector3 p)
+    {
+        for (int i = 0; i < All.Count; i++)
+        {
+            var f = All[i];
+            if (f.AmountAt(p) > f.blockAmount) return true;
+        }
+        return false;
+    }
+
+    /// Highest sand amount at this point and the sand surface height there.
+/// The field with the most sand at this point, its amount and the sand surface height there.
+    public static bool TryGetSurface(Vector3 p, out float y, out float amt, out SandField field)
+    {
+        y = p.y; amt = 0f; field = null;
+        for (int i = 0; i < All.Count; i++)
+        {
+            float a = All[i].AmountAt(p);
+            if (a > amt) { amt = a; y = All[i].SurfaceY(p); field = All[i]; }
+        }
+        return amt > 0f;
+    }
+
+    void OnDrawGizmosSelected()
+    {
+        Gizmos.color = new Color(1f, 0.8f, 0.3f, 0.8f);
+        Gizmos.DrawWireCube(transform.position + Vector3.up * sandHeight * 0.5f, new Vector3(size.x, sandHeight, size.y));
+    }
+}

@@ -1,0 +1,318 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+/// SAND PROTOTYPE - vacuum gun.
+/// When sand is in a cone in front of the player it gets sucked in, until the tank is full.
+/// Stand at the home base to empty the tank. Standalone: it only reads the player's position and the
+/// home base zone; PlayerCarrier, Economy and the rest of the game are not touched.
+/// Turn the whole prototype off by disabling its root object.
+public class SuctionGun : MonoBehaviour
+{
+    [Tooltip("The player (found automatically)")]
+    public Transform player;
+
+    [Header("Gun stats")]
+    public float range = 3.5f;
+    [Range(5f, 80f)] public float halfAngle = 30f;
+    [Tooltip("How fast sand disappears at the nozzle (1 = one full grid point per second)")]
+    public float suckRate = 1.8f;
+    public int capacity = 60;
+    [Tooltip("Tank units per cubic metre of sand")]
+    public float unitsPerCubicMetre = 1f;
+    [Tooltip("Units per second emptied at the home base")]
+    public float unloadRate = 40f;
+    [Tooltip("Multiplies the materials paid out (for gun upgrades / bonuses)")]
+    public float materialMultiplier = 1f;
+
+    [Header("Look")]
+    public Vector3 gunLocalPos = new Vector3(0.4f, 1.25f, 0.5f);
+    public Material particleMaterial;
+    public Material swirlMaterial;
+    public Color sandColor = new Color(1f, 0.83f, 0.42f);
+    public float particlesPerSecond = 110f;
+    public float particleSpeed = 7f;
+
+    public float Stored { get; private set; }
+    /// Materials the sand in the tank is worth (paid out at the base).
+    public float StoredMaterials { get; private set; }
+    /// Fired with the amount each time materials are paid out.
+    public event System.Action<int> PaidOut;
+    float payout;
+    public bool IsFull => Stored >= capacity - 0.001f;
+    public bool Sucking { get; private set; }
+    public bool Unloading { get; private set; }
+
+    Transform gun, nozzle, swirl;
+    ParticleSystem ps;
+    float blend, emitAcc, swirlAngle;
+    readonly List<Object> owned = new List<Object>();
+
+    // ------------------------------------------------------------------ lifecycle
+
+    void OnEnable()
+    {
+        if (player == null)
+        {
+            var pc = FindFirstObjectByType<JoystickPlayerController>();
+            if (pc != null) player = pc.transform;
+        }
+        if (player == null || !Application.isPlaying) return;
+        BuildGun();
+        BuildFX();
+    }
+
+    void OnDisable()
+    {
+        foreach (var o in owned) if (o != null) Destroy(o);
+        owned.Clear();
+        gun = nozzle = swirl = null;
+        ps = null;
+    }
+
+    void Update()
+    {
+        if (player == null || gun == null) return;
+        float dt = Time.deltaTime;
+        Vector3 pos = player.position;
+        Vector3 fwd = player.forward; fwd.y = 0f;
+        if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward;
+        fwd.Normalize();
+
+        // empty the tank at home
+        Unloading = false;
+        if (Stored > 0f)
+            foreach (var h in HomeBase.All)
+                if (h != null && h.InRange(pos)) { Unload(dt); Unloading = true; break; }
+
+        // suck
+        Sucking = false;
+        if (!IsFull && !Unloading && !PlayerHealth.KnockedOut)
+        {
+            float vol = 0f, mats = 0f;
+            Vector3 from = pos + fwd * 0.2f;
+            for (int i = 0; i < SandField.All.Count; i++)
+            {
+                vol += SandField.All[i].Suck(from, fwd, range, halfAngle, suckRate, dt, out float m);
+                mats += m;
+            }
+            if (vol > 0f)
+            {
+                Sucking = true;
+                float units = vol * unitsPerCubicMetre;
+                float add = Mathf.Min(units, capacity - Stored);
+                Stored += add;
+                StoredMaterials += mats;   // full value, also for the auto-cleared rest of a field
+            }
+        }
+
+        blend = Mathf.MoveTowards(blend, Sucking ? 1f : 0f, dt * (Sucking ? 6f : 3f));
+        UpdateFX(dt, pos, fwd);
+    }
+
+    // ------------------------------------------------------------------ unloading
+
+    void Unload(float dt)
+    {
+        float d = Mathf.Min(Stored, unloadRate * dt);
+        float share = Stored > 0f ? d / Stored : 1f;
+        float m = StoredMaterials * share;
+        Stored -= d;
+        StoredMaterials -= m;
+        payout += m * materialMultiplier;
+        if (Stored <= 0.0001f)
+        {
+            Stored = 0f;
+            StoredMaterials = 0f;
+            payout = Mathf.Round(payout);   // tank empty: pay the rest, rounded
+        }
+        int whole = Mathf.FloorToInt(payout);
+        if (whole > 0)
+        {
+            payout -= whole;
+            if (Economy.Instance != null) Economy.Instance.AddMaterials(whole);
+            PaidOut?.Invoke(whole);
+        }
+    }
+
+    
+// ------------------------------------------------------------------ effects
+
+    void UpdateFX(float dt, Vector3 pos, Vector3 fwd)
+    {
+        // gun rattles while it works
+        gun.localPosition = gunLocalPos + (blend > 0f ? Random.insideUnitSphere * 0.02f * blend : Vector3.zero);
+
+        // swirl at the nozzle
+        swirlAngle -= dt * 900f;
+        bool showSwirl = blend > 0.01f;
+        if (swirl.gameObject.activeSelf != showSwirl) swirl.gameObject.SetActive(showSwirl);
+        if (showSwirl)
+        {
+            var cam = Camera.main;
+            swirl.position = nozzle.position + fwd * 0.12f;
+            var face = cam != null ? Quaternion.LookRotation(cam.transform.forward, Vector3.up) : Quaternion.LookRotation(-fwd);
+            swirl.rotation = face * Quaternion.Euler(0f, 0f, swirlAngle);
+            swirl.localScale = Vector3.one * (blend * (0.9f + 0.12f * Mathf.Sin(Time.time * 25f)));
+        }
+
+        // sand stream flying into the nozzle
+        if (Sucking)
+        {
+            emitAcc += particlesPerSecond * dt;
+            while (emitAcc >= 1f) { emitAcc -= 1f; EmitOne(pos, fwd); }
+        }
+        else emitAcc = 0f;
+    }
+
+    void EmitOne(Vector3 pos, Vector3 fwd)
+    {
+        for (int tries = 0; tries < 6; tries++)
+        {
+            float r = Mathf.Lerp(0.6f, range, Mathf.Sqrt(Random.value));
+            float a = Random.Range(-halfAngle, halfAngle);
+            Vector3 p = pos + Quaternion.Euler(0f, a, 0f) * fwd * r;
+            if (!SandField.TryGetSurface(p, out float y, out float amt, out SandField field) || amt < 0.05f) continue;
+            p.y = y - Random.Range(0f, 0.3f);
+            Vector3 target = nozzle.position;
+            float life = Mathf.Max(0.08f, Vector3.Distance(p, target) / particleSpeed);
+            var ep = new ParticleSystem.EmitParams
+            {
+                position = p,
+                velocity = (target - p) / life,
+                startLifetime = life,
+                startSize = Random.Range(0.12f, 0.32f),
+                startColor = Color.Lerp(field != null ? field.ParticleColor : sandColor, Color.white, Random.value * 0.35f),
+            };
+            ps.Emit(ep, 1);
+            return;
+        }
+    }
+
+    // ------------------------------------------------------------------ building (placeholder art)
+
+    void BuildGun()
+    {
+        gun = new GameObject("Suction Gun (prototype)").transform;
+        owned.Add(gun.gameObject);
+        gun.SetParent(player, false);
+        gun.localPosition = gunLocalPos;
+
+        var red = LitMat(new Color(0.85f, 0.2f, 0.18f));
+        var purple = LitMat(new Color(0.55f, 0.45f, 0.95f));
+        var dark = LitMat(new Color(0.2f, 0.2f, 0.24f));
+        Part(PrimitiveType.Cylinder, new Vector3(0f, 0f, 0.05f), new Vector3(90f, 0f, 0f), new Vector3(0.2f, 0.3f, 0.2f), red);       // body
+        Part(PrimitiveType.Cylinder, new Vector3(0f, 0f, -0.27f), new Vector3(90f, 0f, 0f), new Vector3(0.27f, 0.07f, 0.27f), purple); // back cap
+        Part(PrimitiveType.Cylinder, new Vector3(0f, 0f, 0.38f), new Vector3(90f, 0f, 0f), new Vector3(0.32f, 0.06f, 0.32f), purple);  // nozzle ring
+        Part(PrimitiveType.Cylinder, new Vector3(0f, 0.15f, -0.05f), new Vector3(90f, 0f, 0f), new Vector3(0.09f, 0.2f, 0.09f), dark); // top tube
+        Part(PrimitiveType.Cube, new Vector3(0f, -0.17f, -0.08f), new Vector3(20f, 0f, 0f), new Vector3(0.08f, 0.2f, 0.1f), dark);     // grip
+
+        nozzle = new GameObject("Nozzle").transform;
+        nozzle.SetParent(gun, false);
+        nozzle.localPosition = new Vector3(0f, 0f, 0.45f);
+    }
+
+    Material LitMat(Color c)
+    {
+        var m = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+        m.SetColor("_BaseColor", c);
+        m.SetFloat("_Smoothness", 0.35f);
+        owned.Add(m);
+        return m;
+    }
+
+    void Part(PrimitiveType type, Vector3 pos, Vector3 euler, Vector3 scale, Material mat)
+    {
+        var go = GameObject.CreatePrimitive(type);
+        Destroy(go.GetComponent<Collider>());
+        go.transform.SetParent(gun, false);
+        go.transform.localPosition = pos;
+        go.transform.localRotation = Quaternion.Euler(euler);
+        go.transform.localScale = scale;
+        go.GetComponent<MeshRenderer>().sharedMaterial = mat;
+    }
+
+    void BuildFX()
+    {
+        var shader = Shader.Find("SandPrototype/SandParticle");
+
+        // particles
+        var pgo = new GameObject("Sand Suction Particles (prototype)");
+        owned.Add(pgo);
+        ps = pgo.AddComponent<ParticleSystem>();
+        var main = ps.main;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.maxParticles = 800;
+        main.startSpeed = 0f;
+        main.playOnAwake = true;
+        main.loop = true;
+        var em = ps.emission; em.rateOverTime = 0f;
+        var shape = ps.shape; shape.enabled = false;
+        var sol = ps.sizeOverLifetime;
+        sol.enabled = true;
+        sol.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0f, 0.6f), new Keyframe(0.3f, 1f), new Keyframe(1f, 0.25f)));
+        var col = ps.colorOverLifetime;
+        col.enabled = true;
+        var g = new Gradient();
+        g.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                  new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 0.15f), new GradientAlphaKey(0.8f, 1f) });
+        col.color = g;
+        var pr = pgo.GetComponent<ParticleSystemRenderer>();
+        var pm = particleMaterial != null ? new Material(particleMaterial) : new Material(shader);
+        pm.SetTexture("_MainTex", SoftDot());
+        owned.Add(pm);
+        pr.sharedMaterial = pm;
+        pr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        pr.receiveShadows = false;
+        ps.Play();
+
+        // swirl at the nozzle
+        var sgo = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        sgo.name = "Suction Swirl (prototype)";
+        Destroy(sgo.GetComponent<Collider>());
+        owned.Add(sgo);
+        swirl = sgo.transform;
+        var sm = swirlMaterial != null ? new Material(swirlMaterial) : new Material(shader);
+        sm.SetTexture("_MainTex", SwirlTex());
+        sm.SetColor("_Color", new Color(1f, 0.93f, 0.6f, 0.9f));
+        owned.Add(sm);
+        var sr = sgo.GetComponent<MeshRenderer>();
+        sr.sharedMaterial = sm;
+        sr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        sgo.SetActive(false);
+    }
+
+    Texture2D SoftDot()
+    {
+        const int N = 32;
+        var t = new Texture2D(N, N, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, name = "SandDot" };
+        for (int y = 0; y < N; y++)
+        for (int x = 0; x < N; x++)
+        {
+            float r = new Vector2(x - N * 0.5f + 0.5f, y - N * 0.5f + 0.5f).magnitude / (N * 0.5f);
+            float a = Mathf.SmoothStep(1f, 0f, Mathf.InverseLerp(0.45f, 1f, r));
+            t.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+        }
+        t.Apply();
+        owned.Add(t);
+        return t;
+    }
+
+    Texture2D SwirlTex()
+    {
+        const int N = 128;
+        var t = new Texture2D(N, N, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, name = "SandSwirl" };
+        for (int y = 0; y < N; y++)
+        for (int x = 0; x < N; x++)
+        {
+            float dx = (x + 0.5f) / N * 2f - 1f, dy = (y + 0.5f) / N * 2f - 1f;
+            float r = Mathf.Sqrt(dx * dx + dy * dy);
+            float ang = Mathf.Atan2(dy, dx);
+            float arms = Mathf.Pow(0.5f + 0.5f * Mathf.Cos(3f * ang + r * 9f), 3f);
+            float fade = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(1f, 0.55f, r)) * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.05f, 0.3f, r));
+            t.SetPixel(x, y, new Color(1f, 1f, 1f, Mathf.Clamp01(arms * fade * 1.2f + fade * 0.15f)));
+        }
+        t.Apply();
+        owned.Add(t);
+        return t;
+    }
+}

@@ -17,6 +17,9 @@ public class JoystickPlayerController : MonoBehaviour
     public float gravity = 20f;
     [Range(0f, 0.5f)] public float deadZone = 0.1f;
 
+    /// Multiplies moveSpeed; other systems set it (e.g. the suction gun slows you while sucking). 1 = normal.
+    [System.NonSerialized] public float speedMultiplier = 1f;
+
     CharacterController controller;
     Animator anim;
     float verticalVelocity;
@@ -85,7 +88,7 @@ public class JoystickPlayerController : MonoBehaviour
         if (controller.isGrounded && verticalVelocity < 0) verticalVelocity = -2f;
         verticalVelocity -= gravity * Time.deltaTime;
 
-        Vector3 velocity = move * moveSpeed;
+        Vector3 velocity = move * moveSpeed * speedMultiplier;
         velocity.y = verticalVelocity;
         if (PipeTether.Instance != null) velocity = PipeTether.Instance.ConstrainVelocity(transform.position, velocity, Time.deltaTime);   // pipe to the base: can't walk past its end
         controller.Move(velocity * Time.deltaTime);
