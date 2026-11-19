@@ -14,7 +14,7 @@ public class FactoryPopup : MonoBehaviour
     bool wired;
     float refreshTimer;
 
-    int Max => factory == null ? 0 : Mathf.Min(maxPerOrder, factory.MaxAffordable);
+    int Max => factory == null || !factory.CanProduce ? 0 : Mathf.Min(maxPerOrder, factory.MaxAffordable);
 
     void Wire()
     {
@@ -70,7 +70,8 @@ public class FactoryPopup : MonoBehaviour
         count = Mathf.Clamp(count, 0, Max);
         int have = Economy.Instance != null ? Economy.Instance.materials : 0;
         int lvl = factory.Upgrades != null ? factory.Upgrades.Level : 1;
-        infoText.text = "Scout Bot Lv " + lvl + "  ·  " + factory.CostPerBot + " materials  ·  " + Mathf.RoundToInt(factory.BuildTime) + "s each" +
+        string unit = factory.UnitWord;
+        infoText.text = Capitalize(factory.UnitName) + " Lv " + lvl + "  ·  " + factory.CostPerBot + " materials  ·  " + Mathf.RoundToInt(factory.BuildTime) + "s each" +
             (factory.Upgrades != null && factory.Upgrades.AutoProgram != null ? "  ·  auto: " + factory.Upgrades.AutoProgram.shortName : "");
         countText.text = count.ToString();
         totalText.text = "Total: " + (count * factory.CostPerBot) + " materials";
@@ -82,6 +83,14 @@ public class FactoryPopup : MonoBehaviour
         plusButton.interactable = count < Max;
         maxButton.interactable = Max > 0;
         confirmButton.interactable = count > 0;
-        confirmText.text = Max == 0 ? "NOT ENOUGH MATERIALS" : count == 1 ? "BUILD 1 BOT" : "BUILD " + count + " BOTS";
+        confirmText.text = !factory.CanProduce ? "NO " + unit + " DESIGN YET"
+            : Max == 0 ? "NOT ENOUGH MATERIALS" : count == 1 ? "BUILD 1 " + unit : "BUILD " + count + " " + unit + "S";
+    }
+
+    static string Capitalize(string caps)
+    {
+        var words = caps.ToLowerInvariant().Split(' ');
+        for (int i = 0; i < words.Length; i++) if (words[i].Length > 0) words[i] = char.ToUpperInvariant(words[i][0]) + words[i].Substring(1);
+        return string.Join(" ", words);
     }
 }

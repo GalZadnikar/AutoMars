@@ -12,6 +12,11 @@ public enum StatType
     BuildTime,
     BotCost,
     BatteryRuntime,   // seconds of active work on a full battery (keep new stats at the end: the enum is saved as a number)
+    PipeRange,        // player only: how far the pipe reaches (>= Stats.NoLimit = H2O pump, no limit)
+    Damage,           // combat robots (Drone Bay)
+    FireRate,         // shots per second
+    AttackRange,      // metres
+    MaxHealth,        // hit points
 }
 
 public enum ModOp { AddFlat, AddPercent }
@@ -47,6 +52,16 @@ public static class Stats
 {
     public static readonly StatType[] All = (StatType[])Enum.GetValues(typeof(StatType));
 
+    /// Stats shown in a factory Workshop when its tree doesn't list its own.
+    public static readonly StatType[] FactoryStats =
+    {
+        StatType.MoveSpeed, StatType.CarryCapacity, StatType.CollectRate, StatType.UnloadRate,
+        StatType.BuildTime, StatType.BotCost, StatType.BatteryRuntime,
+    };
+
+    /// Pipe range at or above this = no limit (the portable H2O pump).
+    public const float NoLimit = 9999f;
+
     public static string Label(StatType s) => s switch
     {
         StatType.MoveSpeed => "Move Speed",
@@ -56,12 +71,17 @@ public static class Stats
         StatType.BuildTime => "Build Time",
         StatType.BotCost => "Bot Cost",
         StatType.BatteryRuntime => "Battery",
+        StatType.PipeRange => "Pipe Range",
+        StatType.Damage => "Damage",
+        StatType.FireRate => "Fire Rate",
+        StatType.AttackRange => "Range",
+        StatType.MaxHealth => "Health",
         _ => s.ToString(),
     };
 
     public static bool LowerIsBetter(StatType s) => s == StatType.BuildTime || s == StatType.BotCost;
 
-    public static bool IsInteger(StatType s) => s == StatType.CarryCapacity || s == StatType.BotCost;
+    public static bool IsInteger(StatType s) => s == StatType.CarryCapacity || s == StatType.BotCost || s == StatType.MaxHealth;
 
     public static string Format(StatType s, float v) => s switch
     {
@@ -72,6 +92,11 @@ public static class Stats
         StatType.BuildTime => v.ToString("0.#") + "s",
         StatType.BotCost => Mathf.RoundToInt(v).ToString(),
         StatType.BatteryRuntime => Clock(v),
+        StatType.PipeRange => v >= NoLimit * 0.5f ? "NO LIMIT" : v.ToString("0") + " m",
+        StatType.Damage => v.ToString("0.#"),
+        StatType.FireRate => v.ToString("0.0") + "/s",
+        StatType.AttackRange => v.ToString("0") + " m",
+        StatType.MaxHealth => Mathf.RoundToInt(v).ToString(),
         _ => v.ToString("0.##"),
     };
 
@@ -91,6 +116,7 @@ public static class Stats
             return Mathf.Abs(sec) >= 60 ? sign + Clock(Mathf.Abs(sec)) : sign + Mathf.Abs(sec) + "s";
         }
         if (Mathf.Abs(delta) < 0.05f) return "";
+        if (s == StatType.PipeRange && Mathf.Abs(delta) >= NoLimit * 0.5f) return "";
         return (delta > 0 ? "+" : "-") + Mathf.Abs(delta).ToString(s == StatType.BuildTime ? "0.#" : "0.0");
     }
 

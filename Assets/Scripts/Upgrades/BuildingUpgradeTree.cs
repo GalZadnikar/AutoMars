@@ -13,6 +13,24 @@ public class BuildingUpgradeTree : ScriptableObject
     public string displayName = "GATHERER FACTORY";
     public string category = "PRODUCTION BUILDING";
     public string outputName = "SCOUT BOT";
+    [Tooltip("Text before the output name in the showcase")]
+    public string outputPrefix = "OUTPUT:  ";
+    [Tooltip("Level bar label, e.g. FACTORY LEVEL / PLAYER LEVEL")]
+    public string levelLabel = "FACTORY LEVEL";
+    [Tooltip("First row of the stats list")]
+    public string levelRowLabel = "Robot Level";
+    [Tooltip("Battery + Master Disk slots under the model (factories only)")]
+    public bool hasSlots = true;
+    [Tooltip("Stats listed in the Workshop. Empty = the factory stats")]
+    public List<StatType> shownStats = new List<StatType>();
+
+    [Header("What it builds")]
+    [Tooltip("Only disks that fit this robot type can go into the Master Disk slot")]
+    public RobotType robotType = RobotType.Gatherer;
+    [Tooltip("Singular word on the factory popup / button: BOT, DRONE")]
+    public string unitWord = "BOT";
+    [Tooltip("Level-1 values that replace the ones read from the factory / bot prefab (e.g. the drone's weapon stats)")]
+    public List<StatMod> baseStats = new List<StatMod>();
 
     [Header("Leveling")]
     [Tooltip("Materials to go from level N to N+1 (element 0 = level 1 -> 2). Count + 1 = max level.")]

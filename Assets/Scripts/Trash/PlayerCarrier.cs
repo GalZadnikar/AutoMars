@@ -120,6 +120,21 @@ public class PlayerCarrier : MonoBehaviour
         carried--;
     }
 
+    /// Drops the whole trash bag (player knocked out). Lost for now; becomes loose trash once E1 exists.
+    /// Returns how many items were dropped.
+    public int DropAll()
+    {
+        int n = stack.Count;
+        if (n == 0) return 0;
+        for (int i = flights.Count - 1; i >= 0; i--) if (flights[i].home == null) flights.RemoveAt(i);
+        foreach (var t in stack) if (t != null) Release(t);
+        stack.Clear();
+        carried = 0;
+        PileClearFX.Play(transform.position, 1.5f);
+        UpdateLabel();
+        return n;
+    }
+
     void UpdateFlights(float dt)
     {
         for (int i = flights.Count - 1; i >= 0; i--)

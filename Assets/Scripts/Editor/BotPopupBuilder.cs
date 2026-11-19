@@ -81,13 +81,32 @@ public static class BotPopupBuilder
         var hint = NewRect("Hint", slot); Stretch(hint, 20);
         bp.slotHint = AddText(hint, "Drag a disk here", 30, WorkshopTheme.Muted, FontStyles.Normal);
 
-        var follow = R("Follow", panel, -40, 536, 440, 120);
+        // FOLLOW (small, quiet) + FORMATION (drones only, C4) side by side
+        var follow = R("Follow", panel, -153, 512, 214, 62);
         bp.followBg = AddImage(follow, WorkshopTheme.ButtonOff);
         bp.followButton = follow.gameObject.AddComponent<Button>();
         bp.followButton.targetGraphic = bp.followBg;
-        var fl = NewRect("Label", follow); Stretch(fl, 6);
-        bp.followLabel = AddText(fl, "FOLLOW: OFF", 42, Color.white);
-        Txt("FollowHint", panel, -40, 668, 440, 80, "ON: the bot escorts you.\nOFF: it goes back to its job.", 22, WorkshopTheme.Muted, style: FontStyles.Normal);
+        var fl = NewRect("Label", follow); Stretch(fl, 4);
+        bp.followLabel = AddText(fl, "FOLLOW: OFF", 24, WorkshopTheme.Muted);
+        bp.followLabel.enableAutoSizing = true; bp.followLabel.fontSizeMin = 12; bp.followLabel.fontSizeMax = 22; bp.followLabel.textWrappingMode = TextWrappingModes.NoWrap;
+        var form = R("Formation", panel, 73, 512, 214, 62);
+        bp.formationBg = AddImage(form, WorkshopTheme.ButtonOff);
+        bp.formationButton = form.gameObject.AddComponent<Button>();
+        bp.formationButton.targetGraphic = bp.formationBg;
+        var fol = NewRect("Label", form); Stretch(fol, 4);
+        bp.formationLabel = AddText(fol, "FORMATION: OFF", 24, WorkshopTheme.Muted);
+        bp.formationLabel.enableAutoSizing = true; bp.formationLabel.fontSizeMin = 12; bp.formationLabel.fontSizeMax = 22; bp.formationLabel.textWrappingMode = TextWrappingModes.NoWrap;
+        form.gameObject.SetActive(false);   // shown for drones
+        bp.followHint = Txt("FollowHint", panel, -40, 584, 440, 60, "", 19, WorkshopTheme.Muted, style: FontStyles.Normal);
+
+        // R1: DESTROY (red; first tap arms it, second tap scraps the bot)
+        var destroy = R("Destroy", panel, -40, 760, 440, 92);
+        bp.destroyBg = AddImage(destroy, new Color(0.62f, 0.14f, 0.1f));
+        bp.destroyButton = destroy.gameObject.AddComponent<Button>();
+        bp.destroyButton.targetGraphic = bp.destroyBg;
+        var dl = NewRect("Label", destroy); Stretch(dl, 6);
+        bp.destroyLabel = AddText(dl, "DESTROY", 34, Color.white);
+        bp.destroyLabel.enableAutoSizing = true; bp.destroyLabel.fontSizeMin = 22; bp.destroyLabel.fontSizeMax = 34;
 
         // ---------- right: disks ----------
         Txt("InventoryCaption", panel, 500, 144, 560, 40, "YOUR DISKS", 28, WorkshopTheme.Cyan).characterSpacing = 4f;

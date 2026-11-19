@@ -2,6 +2,12 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
+/// Something other than a factory that has an upgrade tree (the player): fills the level-1 values.
+public interface IUpgradeBase
+{
+    void FillBase(StatBlock s);
+}
+
 /// Level + equipped perks of one production building. Sits next to BotFactory.
 /// Base values come from where they already live (factory inspector + the bot prefab),
 /// the tree adds per-level growth and perks on top.
@@ -29,8 +35,10 @@ public class BuildingUpgrades : MonoBehaviour
     public int MaxLevel => tree != null ? tree.MaxLevel : 1;
     public bool IsMaxLevel => level >= MaxLevel;
     public int NextLevelCost => IsMaxLevel || tree == null ? 0 : tree.levelCosts[level - 1];
-    public bool CanAffordLevelUp => !IsMaxLevel && Economy.Instance != null && Economy.Instance.materials >= NextLevelCost;
+    public bool CanAffordLevelUp => !IsMaxLevel && (BuildMode.FreeBuild || (Economy.Instance != null && Economy.Instance.materials >= NextLevelCost));
     public int TierCount => tree != null ? tree.tiers.Count : 0;
+    /// What this building builds (decides which disks fit the Master Disk slot).
+    public RobotType OutputType => tree != null ? tree.robotType : RobotType.Gatherer;
     public bool MasterDiskUnlocked => tree != null && level >= tree.masterDiskUnlockLevel;
 
     /// Stats with the current level and equipped perks. Cached; refreshed on change.
@@ -75,7 +83,7 @@ public class BuildingUpgrades : MonoBehaviour
     public bool TryLevelUp()
     {
         if (IsMaxLevel || Economy.Instance == null) return false;
-        if (!Economy.Instance.TrySpend(NextLevelCost)) return false;
+        if (!BuildMode.FreeBuild && !Economy.Instance.TrySpend(NextLevelCost)) return false;
         level++;
         Changed();
         return true;
@@ -133,7 +141,7 @@ public class BuildingUpgrades : MonoBehaviour
     public bool EquipMasterDisk(DiskProgram disk)
     {
         var inv = PlayerInventory.Instance;
-        if (disk == null || inv == null || !MasterDiskUnlocked || !inv.RemoveDisk(disk)) return false;
+        if (disk == null || inv == null || !MasterDiskUnlocked || !disk.FitsOn(OutputType) || !inv.RemoveDisk(disk)) return false;
         var old = masterDisk;
         masterDisk = disk;
         if (old != null) inv.Add(old);
@@ -167,6 +175,20 @@ public class BuildingUpgrades : MonoBehaviour
         var s = new StatBlock { Level = level };
 
         // --- base values (where they're tuned today) ---
+        var custom = GetComponent<IUpgradeBase>();
+        if (custom != null) custom.FillBase(s);
+        else
+        {
+            FillFactoryBase(s, previewBattery, battery);
+            if (tree != null) foreach (var m in tree.baseStats) s[m.stat] = m.value;   // e.g. the drone's weapon stats
+        }
+
+        if (tree == null) return s;
+        return ApplyTree(s, previewTier, previewOption);
+    }
+
+    void FillFactoryBase(StatBlock s, bool previewBattery, BatteryItem battery)
+    {
         var f = Factory;
         var bot = f != null && f.botPrefab != null ? f.botPrefab.GetComponent<ScoutBot>() : null;
         s[StatType.MoveSpeed] = bot != null ? bot.moveSpeed : 3.5f;
@@ -177,9 +199,10 @@ public class BuildingUpgrades : MonoBehaviour
         s[StatType.BotCost] = f != null ? f.costPerBot : 10;
         var cell = previewBattery ? battery : equippedBattery;
         s[StatType.BatteryRuntime] = cell != null ? cell.runtimeSeconds : (bot != null ? bot.batteryRuntime : 60f);
+    }
 
-        if (tree == null) return s;
-
+    StatBlock ApplyTree(StatBlock s, int previewTier, int previewOption)
+    {
         int n = Stats.All.Length;
         var flat = new float[n];
         var pct = new float[n];
@@ -204,6 +227,7 @@ public class BuildingUpgrades : MonoBehaviour
         foreach (var st in Stats.All)
         {
             int i = (int)st;
+            if (st == StatType.PipeRange && s[st] >= Stats.NoLimit * 0.5f) continue;   // the pump: stays "no limit"
             float v = (s[st] + flat[i]) * Mathf.Max(0.05f, 1f + pct[i] / 100f);
             if (Stats.IsInteger(st)) v = Mathf.Max(1, Mathf.RoundToInt(v));
             s[st] = v;

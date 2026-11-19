@@ -10,6 +10,8 @@ public class BotFactory : MonoBehaviour
 
     [Header("Production (upgradeable)")]
     public GameObject botPrefab;
+    [Tooltip("Model shown in the Workshop when there is no botPrefab yet (Drone Bay before the Combat Drone exists)")]
+    public GameObject previewPrefab;
     public int costPerBot = 10;
     public float buildTime = 5f;
 
@@ -35,7 +37,16 @@ public class BotFactory : MonoBehaviour
     public float BuildTime => Upgrades != null ? Mathf.Max(0.5f, Upgrades.Current[StatType.BuildTime]) : buildTime;
 
     
-public int Queued { get; private set; }
+/// False while there is nothing to build (no bot prefab yet): ordering is blocked.
+    public bool CanProduce => botPrefab != null;
+    /// Prefab for the Workshop showcase.
+    public GameObject PreviewPrefab => botPrefab != null ? botPrefab : previewPrefab;
+    /// "BOT" / "DRONE" (from the upgrade tree).
+    public string UnitWord => Upgrades != null && Upgrades.tree != null && !string.IsNullOrEmpty(Upgrades.tree.unitWord) ? Upgrades.tree.unitWord : "BOT";
+    /// Unit name shown in the popup ("Scout Bot", "Combat Drone").
+    public string UnitName => Upgrades != null && Upgrades.tree != null && !string.IsNullOrEmpty(Upgrades.tree.outputName) ? Upgrades.tree.outputName : "SCOUT BOT";
+
+    public int Queued { get; private set; }
     public float TimeLeft => Mathf.Max(0f, BuildTime - timer);
     public float Progress => Queued > 0 ? timer / BuildTime : 0f;
     public int MaxAffordable => Economy.Instance != null ? Economy.Instance.materials / Mathf.Max(1, CostPerBot) : 0;
@@ -91,7 +102,7 @@ public int Queued { get; private set; }
     /// Spends materials and queues bots. Returns false if the player can't afford it.
     public bool Order(int count)
     {
-        if (count <= 0 || Economy.Instance == null) return false;
+        if (count <= 0 || Economy.Instance == null || !CanProduce) return false;
         if (!Economy.Instance.TrySpend(count * CostPerBot)) return false;
         Queued += count;
         return true;
@@ -136,13 +147,15 @@ public int Queued { get; private set; }
         var go = Instantiate(botPrefab, pos, Quaternion.LookRotation(Vector3.back));
         built++;
         totalBuilt++;
-        go.name = "Scout Bot " + totalBuilt;
         var bot = go.GetComponent<ScoutBot>();
+        go.name = (bot != null && bot.robotType == RobotType.Drone ? "Combat Drone " : "Scout Bot ") + totalBuilt;
         if (bot != null)
         {
+            bot.SourcePrefab = botPrefab;
             bot.Init(RallyPoint(built - 1), totalBuilt);
+            bot.SetBuiltCost(CostPerBot);   // snapshot for the scrap refund (DevSpawnNow bots count too)
             if (Upgrades != null) bot.ApplyStats(Upgrades.Current);   // bots keep what they were built with
-            if (Upgrades != null && Upgrades.AutoProgram != null) bot.SetProgram(Upgrades.AutoProgram);   // Master Disk: straight to work
+            if (Upgrades != null && Upgrades.AutoProgram != null) bot.SetProgram(Upgrades.AutoProgram, true);   // Master Disk: straight to work
         }
     }
 

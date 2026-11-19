@@ -62,8 +62,9 @@ public class WorkshopScreen : MonoBehaviour
     public bool showDevButton = true;
     public int devAmount = 100;
 
-    BotFactory factory;
     BuildingUpgrades up;
+    System.Action onClosed;
+    StatType[] shown = Stats.FactoryStats;
     BuildingUpgradeTree builtFor;
     readonly List<StatRow> statRows = new List<StatRow>();
     readonly List<TierRow> rows = new List<TierRow>();
@@ -111,14 +112,31 @@ public class WorkshopScreen : MonoBehaviour
 
     public void Open(BotFactory f)
     {
-        if (f == null || f.Upgrades == null || f.Upgrades.tree == null)
+        if (f == null) return;
+        Open(f.Upgrades, f.PreviewPrefab, null);
+    }
+
+    /// Opens the Workshop for any upgrade tree (a factory, the player). previewPrefab = the model in the showcase;
+    /// onClosed runs after CLOSE (e.g. back to the base popup).
+    public void Open(BuildingUpgrades upgrades, GameObject previewPrefab, System.Action closed)
+    {
+        if (upgrades == null || upgrades.tree == null)
         {
-            Debug.LogWarning("WorkshopScreen: factory has no BuildingUpgrades / tree.");
+            Debug.LogWarning("WorkshopScreen: no BuildingUpgrades / tree.");
             return;
         }
         Wire();
-        factory = f;
-        up = f.Upgrades;
+        up = upgrades;
+        onClosed = closed;
+        shown = up.tree.shownStats != null && up.tree.shownStats.Count > 0 ? up.tree.shownStats.ToArray() : Stats.FactoryStats;
+        if (batterySlot != null) batterySlot.gameObject.SetActive(up.tree.hasSlots);
+        if (diskSlot != null) diskSlot.gameObject.SetActive(up.tree.hasSlots);
+        // slot captions ("BATTERY", "MASTER DISK") and the "applies to newly built bots" note are factory-only
+        if (batterySlot != null)
+            foreach (Transform c in batterySlot.transform.parent)
+                if (c.name == "Caption") c.gameObject.SetActive(up.tree.hasSlots);
+        foreach (var t in GetComponentsInChildren<Transform>(true))
+            if (t.name == "Footnote") t.gameObject.SetActive(up.tree.hasSlots);
         up.OnChanged += OnUpgradesChanged;
 
         gameObject.SetActive(true);
@@ -134,7 +152,7 @@ public class WorkshopScreen : MonoBehaviour
         shownMaterials = -1;
         BuildDynamic();
         foreach (var fit in GetComponentsInChildren<FitToSafeArea>()) fit.Apply();   // size the preview correctly on first open
-        if (preview != null) preview.Show(f.botPrefab);
+        if (preview != null) preview.Show(previewPrefab);
         Refresh();
     }
 
@@ -144,8 +162,10 @@ public class WorkshopScreen : MonoBehaviour
         if (preview != null) preview.Hide();
         gameObject.SetActive(false);
         UIState.ModalOpen = false;
-        factory = null;
         up = null;
+        var cb = onClosed;
+        onClosed = null;
+        cb?.Invoke();
     }
 
     void OnUpgradesChanged() => Refresh();
@@ -188,13 +208,13 @@ public class WorkshopScreen : MonoBehaviour
     void BuildDynamic()
     {
         var tree = up.tree;
-        if (builtFor == tree && rows.Count == tree.tiers.Count) return;
+        if (builtFor == tree && rows.Count == tree.tiers.Count && statRows.Count == shown.Length + 1) return;
         foreach (var go in spawned) if (go != null) Destroy(go);
         spawned.Clear(); statRows.Clear(); rows.Clear(); hexes.Clear(); pips.Clear();
         builtFor = tree;
 
         // stats: robot level + every stat
-        for (int i = 0; i < Stats.All.Length + 1; i++)
+        for (int i = 0; i < shown.Length + 1; i++)
         {
             var r = Instantiate(statRowTemplate, statsList);
             r.gameObject.SetActive(true);
@@ -253,17 +273,17 @@ public class WorkshopScreen : MonoBehaviour
 
         titleText.text = tree.displayName.ToUpper();
         categoryText.text = tree.category.ToUpper();
-        outputText.text = "OUTPUT:  " + tree.outputName.ToUpper() + "   <color=" + WorkshopTheme.Hex(WorkshopTheme.Orange) + ">LV " + up.Level + "</color>" +
+        outputText.text = tree.outputPrefix + tree.outputName.ToUpper() + "   <color=" + WorkshopTheme.Hex(WorkshopTheme.Orange) + ">LV " + up.Level + "</color>" +
                           (up.masterDisk != null && up.MasterDiskUnlocked ? "   <color=" + WorkshopTheme.Hex(up.masterDisk.color) + ">AUTO: " + up.masterDisk.shortName.ToUpper() + "</color>" : "");
 
         // --- stats (with deltas while a perk is inspected) ---
         StatBlock preview = pickerOpen
             ? (pickIndex >= 0 && pickerMode == PickerMode.Battery ? up.ComputeStats(-1, -1, true, InventoryBattery(pickIndex)) : null)
             : (inspectTier >= 0 ? up.ComputeStats(inspectTier, inspectOption) : null);
-        statRows[0].Set("Robot Level", cur.Level.ToString(), "", true);
-        for (int i = 0; i < Stats.All.Length; i++)
+        statRows[0].Set(tree.levelRowLabel, cur.Level.ToString(), "", true);
+        for (int i = 0; i < shown.Length; i++)
         {
-            var st = Stats.All[i];
+            var st = shown[i];
             float v = cur[st];
             string d = "";
             bool good = true;
@@ -316,7 +336,7 @@ public class WorkshopScreen : MonoBehaviour
         if (diskIcon != null) diskIcon.color = !diskOpen ? WorkshopTheme.LockedGlyph : md != null ? md.color : WorkshopTheme.Muted;
 
         // --- level ---
-        levelText.text = "FACTORY LEVEL  <color=" + WorkshopTheme.Hex(WorkshopTheme.Orange) + ">" + up.Level + "</color> / " + up.MaxLevel;
+        levelText.text = tree.levelLabel + "  <color=" + WorkshopTheme.Hex(WorkshopTheme.Orange) + ">" + up.Level + "</color> / " + up.MaxLevel;
         for (int i = 0; i < pips.Count; i++)
         {
             bool reached = i < up.Level;
@@ -347,7 +367,7 @@ public class WorkshopScreen : MonoBehaviour
             else
             {
                 detailTitle.text = "UPGRADE TREE";
-                detailBody.text = "Level up the factory to unlock Tier " + (up.Level) + " (+1 skill point).\nTap any perk to preview it.";
+                detailBody.text = "Level up to unlock Tier " + (up.Level) + " (+1 skill point).\nTap any perk to preview it.";
             }
             equipButton.gameObject.SetActive(false);
             return;
@@ -471,6 +491,7 @@ public class WorkshopScreen : MonoBehaviour
         {
             var disk = InventoryDisk(pickIndex);
             if (disk == null) return;
+            if (!disk.FitsOn(up.OutputType)) { Toast("THIS DISK DOESN'T FIT A " + RobotTypes.Name(up.OutputType)); return; }
             pickIndex = -1;
             if (up.EquipMasterDisk(disk)) Toast("MASTER DISK: " + disk.displayName.ToUpper());
             return;
@@ -515,7 +536,8 @@ public class WorkshopScreen : MonoBehaviour
             if (disk)
             {
                 var p = diskStacks[i].item;
-                cards[i].SetupCustom(p.displayName, "AUTO-PROGRAM", p.color, diskIcon != null ? diskIcon.sprite : null, tap, diskStacks[i].count);
+                bool fits = p.FitsOn(up.OutputType);
+                cards[i].SetupCustom(p.displayName, fits ? "AUTO-PROGRAM" : RobotTypes.Name(p.compatibleWith) + " ONLY", p.color, diskIcon != null ? diskIcon.sprite : null, tap, diskStacks[i].count);
             }
             else cards[i].Setup(batStacks[i].item, tap, batStacks[i].count);
             cards[i].SetSelected(i == pickIndex);
@@ -532,9 +554,14 @@ public class WorkshopScreen : MonoBehaviour
                 : "IN SLOT:  <color=" + WorkshopTheme.Hex(WorkshopTheme.Muted) + ">EMPTY (new bots come out idle)</color>";
             var pick = InventoryDisk(pickIndex);
             batteryDetailText.text = pick != null
-                ? "<color=" + WorkshopTheme.Hex(pick.color) + ">" + pick.displayName.ToUpper() + "</color>\nEvery new bot rolls out already running this program."
-                : "Put a disk here and every bot this factory builds starts working right away.\nThe disk stays in the factory (REMOVE gives it back).";
-            batteryEquipButton.interactable = pick != null;
+                ? "<color=" + WorkshopTheme.Hex(pick.color) + ">" + pick.displayName.ToUpper() + "</color>\n" +
+                  (string.IsNullOrEmpty(pick.description) ? "" : pick.description + "\n") +
+                  (pick.FitsOn(up.OutputType) ? "Every new " + up.tree.unitWord.ToLowerInvariant() + " rolls out already running this program."
+                                              : "<color=" + WorkshopTheme.Hex(WorkshopTheme.Red) + ">Doesn't fit a " + RobotTypes.Name(up.OutputType).ToLowerInvariant() + ": this disk is for " + RobotTypes.Name(pick.compatibleWith).ToLowerInvariant() + "s.</color>")
+                : md != null && !string.IsNullOrEmpty(md.description)
+                    ? "<color=" + WorkshopTheme.Hex(md.color) + ">" + md.displayName.ToUpper() + "</color>\n" + md.description + "\nEvery new " + up.tree.unitWord.ToLowerInvariant() + " rolls out running it. Tap a disk to see what it does."
+                    : "Put a disk here and every bot this factory builds starts working right away.\nTap a disk to see what it does. The disk stays in the factory (REMOVE gives it back).";
+            batteryEquipButton.interactable = pick != null && pick.FitsOn(up.OutputType);
         }
         else
         {

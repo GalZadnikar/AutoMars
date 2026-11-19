@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 690af3f7a34f04abe91e7be6fa86c54a, type: 3}
+  m_Name: Disk_Patrol
+  m_EditorClassIdentifier: Assembly-CSharp::PatrolProgram
+  displayName: Patrol
+  shortName: PTL
+  description: Drone flies between spots around the base and the explored map, hovers
+    a few seconds at each, and shoots enemies it meets.
+  color: {r: 0.55, g: 1, b: 0.45, a: 1}
+  compatibleWith: 2
+  baseRadius: 16
+  farRadius: 38
+  farChance: 0.4
+  waitTime: {x: 2.5, y: 5}
+  minHop: 7
+  chaseLeash: 9

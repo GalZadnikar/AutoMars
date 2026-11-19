@@ -36,7 +36,9 @@ public class PipeTether : MonoBehaviour
     public float[] rangePerLevel = { 12f, 16f, 20f, 24f, 28f };
     [Tooltip("Materials to reach level 2, 3, ...")]
     public int[] upgradeCost = { 40, 100, 200, 350 };
-    [Range(1, 5)] public int level = 1;
+    [Range(1, 8)] public int level = 1;
+    [Tooltip("Extra range from player perks (set by PlayerUpgrades)")]
+    public float bonusRange;
 
     [Header("H2O pump (last upgrade)")]
     [Tooltip("At this level the pipe is replaced by an H2O pump dropped where the player stands: no more pipe, no range limit. 0 = never")]
@@ -67,16 +69,19 @@ public class PipeTether : MonoBehaviour
 
     public event Action OnChanged;
 
-    public int MaxLevel => pumpAtLevel > 0 ? Mathf.Min(rangePerLevel.Length, pumpAtLevel) : rangePerLevel.Length;
+    public int MaxLevel => pumpAtLevel > 0 ? Mathf.Min(rangePerLevel.Length + 1, pumpAtLevel) : rangePerLevel.Length;
+    /// Range the pipe has at a level, before perks (Stats.NoLimit once the pump replaces it).
+    public float RangeAt(int lv) => pumpAtLevel > 0 && lv >= pumpAtLevel ? Stats.NoLimit
+                                  : rangePerLevel[Mathf.Clamp(lv - 1, 0, rangePerLevel.Length - 1)];
     /// The pipe was replaced by the H2O pump: the player can go anywhere.
     public bool IsPumped => pumpAtLevel > 0 && level >= pumpAtLevel;
     /// The next upgrade installs the pump.
     public bool NextIsPump => pumpAtLevel > 0 && !IsPumped && level + 1 >= pumpAtLevel;
     public GameObject Pump => pump;
-    public float Range => rangePerLevel[Mathf.Clamp(level - 1, 0, rangePerLevel.Length - 1)];
+    public float Range => rangePerLevel[Mathf.Clamp(level - 1, 0, rangePerLevel.Length - 1)] + bonusRange;
     public bool IsMaxLevel => level >= MaxLevel;
     public int NextCost => IsMaxLevel ? 0 : upgradeCost[Mathf.Clamp(level - 1, 0, upgradeCost.Length - 1)];
-    public float NextRange => rangePerLevel[Mathf.Min(level, rangePerLevel.Length - 1)];
+    public float NextRange => rangePerLevel[Mathf.Min(level, rangePerLevel.Length - 1)] + bonusRange;
     public bool Active => !Disabled && !IsPumped && player != null && isActiveAndEnabled;
     /// Where the pipe leaves the base (top of the base model).
     public Vector3 AnchorPoint => baseAnchor != null ? baseAnchor.position : transform.TransformPoint(topLocal) + baseAnchorOffset;

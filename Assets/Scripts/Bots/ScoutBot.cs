@@ -11,7 +11,11 @@ public abstract class BotBehaviour
     public abstract void Tick(float dt);
 }
 
-/// A worker bot. Without a disk it waits at its spot; with a disk it runs that program.
+/// A robot unit (C3: shared base of gatherer bots and combat drones).
+/// Battery + chargers, follow, program disk, level, HP + broken/repair, popup and scrap live here.
+/// The gatherer is this class as-is (carrying trash); CombatDrone subclasses it and overrides the virtual hooks
+/// (OnAwake, TickIdle, TickCombat, UpdateAnimation, FaceDirection, ApplyStats, SetProgram, PopupStats).
+/// Without a disk it waits at its spot; with a disk it runs that program.
 public class ScoutBot : MonoBehaviour
 {
     public static readonly List<ScoutBot> All = new List<ScoutBot>();
@@ -38,6 +42,12 @@ public class ScoutBot : MonoBehaviour
     [Range(0f, 1f)] public float jumpStartTo = 0.25f;
     public BatteryBar batteryBar;
 
+    [Header("Combat")]
+    [Tooltip("Hit points (C1). At 0 the bot goes down in place; the player repairs it by standing next to it")]
+    public float maxHP = 60f;
+    [Tooltip("Height of the HP bar (just under the battery bar)")]
+    public float hpBarHeight = 3.2f;
+
     [Header("References")]
     public Animator animator;
     public Transform carryAnchor;
@@ -53,10 +63,20 @@ public class ScoutBot : MonoBehaviour
     public string runState = "01_Scout_Bot_Run";
     public string workState = "01_Scout_Bot_Attack";
 
+    [Header("Type (disk compatibility)")]
+    public RobotType robotType = RobotType.Gatherer;
+
     public DiskProgram Program { get; private set; }
     public string BotName { get; private set; } = "Scout Bot";
     /// Tech level of the factory that built this bot (snapshot at spawn).
     public int Level { get; private set; } = 1;
+
+    /// Materials this bot cost when it was built (snapshot at spawn, so later upgrades don't change the scrap refund).
+    public int BuiltCost { get; private set; }
+    /// True while the program on board came from the factory's Master Disk (not from the player's inventory).
+    public bool ProgramFromMasterDisk { get; private set; }
+    /// Refund for scrapping: 50 % of what it cost, rounded down.
+    public int ScrapRefund => BuiltCost / 2;
 
     public string Status { get; set; } = "Waiting for a disk";
     public Vector3 HomePosition { get; set; }
@@ -66,6 +86,20 @@ public class ScoutBot : MonoBehaviour
     // ---------- power ----------
     public float Battery01 => batteryRuntime > 0f ? Mathf.Clamp01(battery / batteryRuntime) : 1f;
     public bool IsDead => dead;
+    /// Shot down to 0 HP: stands still until the player repairs it (battery untouched, disk stays in).
+    public bool IsBroken => broken;
+    /// Out of power or broken: not doing anything until the player helps.
+    public bool IsDown => dead || broken;
+    public Health Health => health;
+    /// The prefab this unit was built from (set by the factory): shown in the bot popup.
+    public GameObject SourcePrefab { get; set; }
+    /// Moved or worked this frame (valid after the brain ran; used by visuals).
+    protected bool MovedThisFrame => moving;
+    protected bool WorkedThisFrame => working;
+    /// Name used for "<name> #N".
+    protected virtual string UnitName => "Scout Bot";
+    /// Extra height for the floating PROGRAM button (drones fly higher).
+    public virtual float ButtonHeight => 0f;
     /// Standing on a pad and charging right now.
     public bool IsCharging => charging != null && charging.IsCharging;
     /// Walking to / queueing at / sitting on a charger.
@@ -113,9 +147,13 @@ public class ScoutBot : MonoBehaviour
     DiskProgram shownProgram;
     bool labelInit;
     int shownPower = -1;
+    string shownExtra;
 
     float battery = -1f;
     bool dead;
+    Health health;
+    bool broken;
+    ParticleSystem brokenSmoke;
     ChargeBehaviour charging;
     float chargeCheckT;
 
@@ -124,6 +162,31 @@ public class ScoutBot : MonoBehaviour
         baseScale = transform.localScale;
         HomePosition = transform.position;
         battery = batteryRuntime;
+        SetupHealth();
+        OnAwake();
+    }
+
+    /// Subclass setup at the end of Awake (Health exists by now).
+    protected virtual void OnAwake() { }
+
+    void SetupHealth()
+    {
+        health = GetComponent<Health>();
+        if (health == null)
+        {
+            health = gameObject.AddComponent<Health>();
+            health.aimHeight = 1.1f;
+            health.hitRadius = 0.65f;
+            health.barHeight = hpBarHeight;
+            health.SetMax(maxHP);
+        }
+        health.SetTeam(Team.Player);
+        health.OnDied += Break;
+    }
+
+    void OnDestroy()
+    {
+        if (health != null) health.OnDied -= Break;
     }
 
     void OnEnable() { if (!All.Contains(this)) All.Add(this); }
@@ -138,20 +201,49 @@ public class ScoutBot : MonoBehaviour
     public void Init(Vector3 rallyPoint, int number)
     {
         HomePosition = rallyPoint;
-        BotName = "Scout Bot #" + number;
+        BotName = UnitName + " #" + number;
         spawnT = 0f;
         transform.localScale = Vector3.zero;
     }
 
-    public void SetProgram(DiskProgram program)
+    /// fromMasterDisk = the factory's Master Disk put it there (nothing drops when scrapped); the popup passes false.
+    public virtual void SetProgram(DiskProgram program, bool fromMasterDisk = false)
     {
+        if (program != null && !program.FitsOn(robotType))
+        {
+            Debug.LogWarning(program.displayName + " doesn't fit a " + robotType + " robot");
+            program = null;
+        }
         Program = program;
+        ProgramFromMasterDisk = fromMasterDisk && program != null;
         behaviour = program != null ? program.CreateBehaviour(this) : null;
         Status = program != null ? "Starting " + program.displayName : "Waiting for a disk";
     }
 
+    /// Called by the factory at spawn: what this bot cost (for the scrap refund).
+    public void SetBuiltCost(int cost) { BuiltCost = Mathf.Max(0, cost); }
+
+    /// Scraps the bot: refunds 50 % of its build cost, drops a player-inserted disk at its feet
+    /// (a Master Disk program drops nothing), carried trash is lost for now (loose trash comes with E1).
+    /// Returns the refund.
+    public int Scrap()
+    {
+        int refund = ScrapRefund;
+        if (Economy.Instance != null && refund > 0) Economy.Instance.AddMaterials(refund);
+        if (Program != null && !ProgramFromMasterDisk) DiskPickup.Drop(Program, transform.position);
+        foreach (var t in stack) if (t != null) Destroy(t.gameObject);   // carried trash is lost (E1: drop as loose trash)
+        stack.Clear();
+        foreach (var t in pool) if (t != null) Destroy(t.gameObject);
+        pool.Clear();
+        flights.Clear();
+        ScrapFX.Play(transform.position);
+        GameToast.Show(BotName.ToUpper() + " SCRAPPED" + (refund > 0 ? " +" + refund : ""), new Color(1f, 0.6f, 0.25f));
+        Destroy(gameObject);
+        return refund;
+    }
+
     /// Called by the factory at spawn: the bot keeps the level and perks it was built with.
-    public void ApplyStats(StatBlock s)
+    public virtual void ApplyStats(StatBlock s)
     {
         if (s == null) return;
         Level = s.Level;
@@ -177,6 +269,7 @@ public class ScoutBot : MonoBehaviour
         }
 
         TickBrain(dt);
+        TickCombat(dt);
         DrainBattery(dt);
 
         Separate(dt);
@@ -189,6 +282,7 @@ public class ScoutBot : MonoBehaviour
 
     void TickBrain(float dt)
     {
+        if (broken) { TickBroken(dt); return; }
         if (dead) { TickDead(dt); return; }
 
         if (charging != null)
@@ -202,6 +296,8 @@ public class ScoutBot : MonoBehaviour
             }
             return;
         }
+
+        if (TickSquad(dt)) return;   // C4: a drone in a formation follows its squad leader
 
         if (Following)
         {
@@ -222,8 +318,44 @@ public class ScoutBot : MonoBehaviour
             return;
         }
 
+        TickIdle(dt);
+    }
+
+    /// Squad hook (drones, C4): return true when the squad moved the robot this frame (the normal brain is skipped).
+    protected virtual bool TickSquad(float dt) => false;
+
+    /// Starts the walk to a charger if the battery needs it (for brains that skip the normal one).
+    protected bool TryStartCharge(float dt)
+    {
+        if (!NeedsCharge(dt)) return false;
+        charging = new ChargeBehaviour(this);
+        charging.Tick(dt);
+        return true;
+    }
+
+    /// Starts the disk program fresh (e.g. after leaving a squad).
+    public void RestartProgram() { behaviour = Program != null ? Program.CreateBehaviour(this) : null; }
+
+    /// Optional label text instead of the program name (e.g. "SQUAD"); null = the normal label.
+    protected virtual string ExtraLabel(out Color color) { color = Color.white; return null; }
+
+    /// No disk (and not following): wait at the home spot.
+    protected virtual void TickIdle(float dt)
+    {
         Status = "Waiting for a disk";
         if (MoveTowards(HomePosition, 0.05f)) FaceDirection(Vector3.back);
+    }
+
+    /// Runs every frame after the brain (weapons). Gatherers have none.
+    protected virtual void TickCombat(float dt) { }
+
+    /// Text for the bot popup's stats box.
+    public virtual string PopupStats()
+    {
+        return "Move  " + moveSpeed.ToString("0.0") + " m/s\n" +
+               "Carry  " + Carried + " / " + capacity + "\n" +
+               "Collect  " + (1f / Mathf.Max(0.01f, pickupInterval)).ToString("0.0") + "/s\n" +
+               "Full charge  " + Stats.Clock(batteryRuntime);
     }
 
     [Header("Follow")]
@@ -275,7 +407,7 @@ public class ScoutBot : MonoBehaviour
     // energy is only used while moving or working
     void DrainBattery(float dt)
     {
-        if (dead || IsCharging) return;
+        if (dead || broken || IsCharging) return;
         if (moving || working) battery = Mathf.Max(0f, battery - dt);
         if (battery <= 0f) Die();
     }
@@ -313,6 +445,60 @@ public class ScoutBot : MonoBehaviour
         }
     }
 
+    // ---------- combat: broken + repair ----------
+
+    void Break()
+    {
+        if (broken) return;
+        broken = true;
+        health.targetable = false;   // down bots aren't targeted
+        if (charging != null) { charging.Cancel(); charging = null; }
+        ChargingStation.LeaveAll(this);
+        Status = "Broken. Stand next to it to repair";
+        CombatFX.Explode(transform.position, 0.55f, new Color(1f, 0.55f, 0.25f));
+        if (brokenSmoke == null) brokenSmoke = CombatFX.BrokenSmoke(transform, 1.6f);
+        labelInit = false;
+    }
+
+    /// Seconds a full repair takes: the same as a jump-start (0 -> jumpStartTo at jumpStartRate).
+    public float RepairTime => jumpStartTo / Mathf.Max(0.01f, jumpStartRate);
+
+    // shot down; the player repairs it to full HP by standing next to it (same flow and timing as the jump-start)
+    void TickBroken(float dt)
+    {
+        var player = PlayerInventory.Instance != null ? PlayerInventory.Instance.transform : null;
+        bool near = false;
+        if (player != null && !PlayerHealth.KnockedOut)
+        {
+            Vector3 d = player.position - transform.position; d.y = 0f;
+            near = d.sqrMagnitude <= jumpStartRadius * jumpStartRadius;
+        }
+        if (!near) { Status = "Broken. Stand next to it to repair"; return; }
+
+        health.Heal(health.maxHP / RepairTime * dt);
+        Status = "Repairing " + Mathf.RoundToInt(health.Fraction * 100f) + "%";
+        if (health.IsFull) Repair();
+    }
+
+    /// Back on its feet at full HP (also used by debug).
+    public void Repair()
+    {
+        if (!broken) { health.HealFull(); return; }
+        broken = false;
+        health.HealFull();
+        health.targetable = true;
+        if (brokenSmoke != null)
+        {
+            brokenSmoke.Stop(true, ParticleSystemStopBehavior.StopEmitting);
+            Destroy(brokenSmoke.gameObject, 2.5f);
+            brokenSmoke = null;
+        }
+        chargeCheckT = 0f;
+        if (!dead && Program != null) behaviour = Program.CreateBehaviour(this);
+        Status = dead ? "Out of power" : "Repaired";
+        labelInit = false;
+    }
+
     [ContextMenu("Dev: battery to 20%")]
     void DevBattery20() => SetBattery01(0.2f);
 
@@ -338,7 +524,7 @@ public class ScoutBot : MonoBehaviour
         return false;
     }
 
-    public void FaceDirection(Vector3 dir)
+    public virtual void FaceDirection(Vector3 dir)
     {
         dir.y = 0f;
         if (dir.sqrMagnitude < 1e-4f) return;
@@ -355,7 +541,7 @@ public class ScoutBot : MonoBehaviour
         Vector3 me = transform.position;
         foreach (var o in All)
         {
-            if (o == this) continue;
+            if (o == this || o.robotType != robotType) continue;   // drones fly over gatherers
             Vector3 d = me - o.transform.position; d.y = 0f;
             float m = d.sqrMagnitude;
             if (m < 1f && m > 1e-4f) push += d.normalized * (1f - Mathf.Sqrt(m));
@@ -439,10 +625,10 @@ public class ScoutBot : MonoBehaviour
 
     // ---------- visuals ----------
 
-    void UpdateAnimation()
+    protected virtual void UpdateAnimation()
     {
         if (animator == null) return;
-        float spd = dead ? 0f : 1f;   // frozen when out of power
+        float spd = dead || broken ? 0f : 1f;   // frozen when out of power / broken
         if (animator.speed != spd) animator.speed = spd;
         int s = moving ? 1 : working ? 2 : 0;
         if (s == animState) return;
@@ -453,10 +639,16 @@ public class ScoutBot : MonoBehaviour
     void UpdateLabel()
     {
         if (statusLabel == null) return;
-        int power = dead ? 2 : IsCharging ? 1 : Following ? 3 : 0;
-        if (labelInit && shownCarried == carried && shownProgram == Program && shownPower == power) return;
-        labelInit = true; shownCarried = carried; shownProgram = Program; shownPower = power;
-        if (power == 2)
+        int power = broken ? 4 : dead ? 2 : IsCharging ? 1 : Following ? 3 : 0;
+        string extra = ExtraLabel(out Color extraColor);
+        if (labelInit && shownCarried == carried && shownProgram == Program && shownPower == power && shownExtra == extra) return;
+        labelInit = true; shownCarried = carried; shownProgram = Program; shownPower = power; shownExtra = extra;
+        if (power == 4)
+        {
+            statusLabel.text = "BROKEN";
+            statusLabel.color = new Color(1f, 0.32f, 0.25f);
+        }
+        else if (power == 2)
         {
             statusLabel.text = "NO POWER";
             statusLabel.color = new Color(1f, 0.32f, 0.25f);
@@ -465,6 +657,11 @@ public class ScoutBot : MonoBehaviour
         {
             statusLabel.text = "CHARGING";
             statusLabel.color = new Color(0.45f, 0.95f, 1f);
+        }
+        else if (extra != null)
+        {
+            statusLabel.text = extra;
+            statusLabel.color = extraColor;
         }
         else if (power == 3)
         {

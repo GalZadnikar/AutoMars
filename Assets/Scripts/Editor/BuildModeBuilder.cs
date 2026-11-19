@@ -35,19 +35,25 @@ public static class BuildModeBuilder
         var recyclerPrefab = PrefabFor(home, "Recycler");
         var factoryPrefab = PrefabFor(factory, "GathererFactory");
 
-        // 3. catalog
-        var defs = new[]
+        // 3. catalog (the Drone Bay joins once builder 11 has made its definition)
+        var defs = new System.Collections.Generic.List<BuildingDef>
         {
             Def("Build_ChargingStation", "Charging Station", "2 more charging pads", 40, chargerPrefab, WorkshopTheme.Cyan, "C"),
             Def("Build_Recycler", "Recycler", "Bots drop trash here", 80, recyclerPrefab, new Color(0.40f, 0.92f, 0.50f), "R"),
             Def("Build_GathererFactory", "Gatherer Factory", "More Scout Bots, own upgrades", 150, factoryPrefab, WorkshopTheme.Orange, "F"),
         };
 
+        var bayDef = AssetDatabase.LoadAssetAtPath<BuildingDef>(DefFolder + "/Build_DroneBay.asset");
+        if (bayDef != null && bayDef.prefab != null) defs.Add(bayDef);
+
         // 4. materials (Sprites/Default = unlit, transparent, vertex colours)
         var ghostMat = SpriteMaterial("BuildGhost", null);
         var overlayMat = SpriteMaterial("BuildGridOverlay", GridTexture());
 
-        // 5. UI
+        // 5. player upgrade tree (PLAYER tab) lives on the player
+        PlayerUpgradesBuilder.Setup();
+
+        // 6. UI
         var bm = BuildUI();
         bm.catalog = new System.Collections.Generic.List<BuildingDef>(defs);
         bm.ghostMaterial = ghostMat;
@@ -267,24 +273,69 @@ public static class BuildModeBuilder
         bm.menuPanel = menu.gameObject;
         bm.menuBackdrop = backdrop;
 
+        const float W = 1180f, H = 664f;
         var cat = NewRect("Panel", menu);
         cat.anchorMin = cat.anchorMax = cat.pivot = new Vector2(0.5f, 0.5f);
         cat.anchoredPosition = Vector2.zero;
-        cat.sizeDelta = new Vector2(1180f, 566f);
+        cat.sizeDelta = new Vector2(W, H);
         AddImage(cat, new Color(0.10f, 0.086f, 0.067f, 0.97f));   // also swallows taps so the panel itself doesn't close
         AddImage(R("Rule", cat, 0, 0, 1180, 5), WorkshopTheme.Orange, false);
         Txt("Title", cat, -412, 14, 300, 52, "BASE", 42, WorkshopTheme.Orange, TextAlignmentOptions.Left).characterSpacing = 4f;
-        Txt("Sub", cat, -212, 68, 700, 40, "Upgrade the base or build on the map", 24, WorkshopTheme.Muted, TextAlignmentOptions.Left, FontStyles.Normal);
         bm.menuMaterialsText = Txt("Materials", cat, 190, 20, 360, 44, "MATERIALS  0", 30, WorkshopTheme.Yellow, TextAlignmentOptions.Right);
         bm.menuCloseButton = Btn("Close", cat, "CLOSE", WorkshopTheme.ButtonOff, Color.white, 30, new Vector2(0.5f, 1f), new Vector2(480f, -46f), new Vector2(170f, 60f), new Vector2(0.5f, 0.5f));
 
-        // section 1: base upgrades
-        Txt("UpgradesLabel", cat, -412, 112, 300, 34, "UPGRADES", 26, WorkshopTheme.Orange, TextAlignmentOptions.Left).characterSpacing = 3f;
-        bm.upgradeRow = CardRow("UpgradeCards", cat, 150);
-        // section 2: buildings
-        Txt("BuildLabel", cat, -412, 338, 300, 34, "BUILD", 26, WorkshopTheme.Orange, TextAlignmentOptions.Left).characterSpacing = 3f;
-        bm.cardRow = CardRow("Cards", cat, 376);
+        // tabs: PLAYER (player + pipe upgrades) | BUILD (buildings with 3D previews)
+        string[] tabNames = { "PLAYER", "BUILD" };
+        string[] tabSubs = { "Level up to get a longer pipe, better stats and skill points for the tree", "Pick a building, then place it on the map" };
+        bm.tabButtons = new Button[tabNames.Length];
+        bm.tabPages = new GameObject[tabNames.Length];
+        for (int i = 0; i < tabNames.Length; i++)
+        {
+            bm.tabButtons[i] = Btn("Tab " + tabNames[i], cat, tabNames[i], i == 0 ? WorkshopTheme.Orange : WorkshopTheme.ButtonOff,
+                i == 0 ? WorkshopTheme.DarkText : Color.white, 30, new Vector2(0.5f, 1f), new Vector2(-W * 0.5f + 45f + i * 252f, -88f),
+                new Vector2(236f, 66f), new Vector2(0f, 1f));
+            var page = R("Page " + tabNames[i], cat, 0, 172, W, H - 172);
+            bm.tabPages[i] = page.gameObject;
+            Txt("Sub", page, -W * 0.5f + 45f + 400f, 0, 800, 34, tabSubs[i], 22, WorkshopTheme.Muted, TextAlignmentOptions.Left, FontStyles.Normal);
+            page.gameObject.SetActive(i == 0);
+        }
+        AddImage(R("TabRule", cat, 0, 160, W - 90f, 3), new Color(WorkshopTheme.Orange.r, WorkshopTheme.Orange.g, WorkshopTheme.Orange.b, 0.45f), false);
+
+        // PLAYER page: astronaut | level, points, stats | LEVEL UP + UPGRADE TREE
+        var playerPage = bm.tabPages[0].transform;
+        var pv = R("PreviewBg", playerPage, -400, 46, 290, 400);
+        AddImage(pv, WorkshopTheme.PanelDark, false);
+        var pvImg = NewRect("Preview", pv); Stretch(pvImg);
+        var raw = pvImg.gameObject.AddComponent<RawImage>();
+        raw.color = new Color(1f, 1f, 1f, 0f);
+        raw.raycastTarget = false;
+        var mp = pvImg.gameObject.AddComponent<ModelPreview>();
+        mp.rigPosition = new Vector3(0f, 1500f, 0f);   // above the base (fog of war darkens rigs over unexplored ground)
+        mp.elevation = 8f;
+        mp.lightFollowsCamera = true;
+        mp.fillIntensity = 3f;
+        mp.padding = 0.9f;
+        mp.startYaw = -25f;
+        mp.maxTextureSize = 512;
+        bm.playerPreview = mp;
+
+        bm.playerLevelText = Txt("Level", playerPage, -5, 50, 440, 50, "PLAYER LEVEL 1 / 6", 34, Color.white, TextAlignmentOptions.Left);
+        bm.playerPointsText = Txt("Points", playerPage, -5, 100, 440, 32, "", 22, WorkshopTheme.Orange, TextAlignmentOptions.Left);
+        bm.playerStatsText = Txt("Stats", playerPage, -5, 140, 440, 220, "", 25, WorkshopTheme.Muted, TextAlignmentOptions.TopLeft, FontStyles.Normal);
+        bm.playerStatsText.lineSpacing = 18f;
+
+        bm.playerLevelUpButton = Btn("LevelUp", playerPage, "LEVEL UP", WorkshopTheme.ButtonGreen, Color.white, 34,
+            new Vector2(0.5f, 1f), new Vector2(390f, -116f), new Vector2(300f, 140f), new Vector2(0.5f, 0.5f));
+        bm.playerLevelUpLabel = bm.playerLevelUpButton.GetComponentInChildren<TMPro.TMP_Text>();
+        bm.playerNextText = Txt("Next", playerPage, 390, 196, 300, 120, "", 20, WorkshopTheme.Muted, TextAlignmentOptions.Top, FontStyles.Normal);
+        bm.playerTreeButton = Btn("Tree", playerPage, "UPGRADE TREE", WorkshopTheme.Orange, WorkshopTheme.DarkText, 30,
+            new Vector2(0.5f, 1f), new Vector2(390f, -378f), new Vector2(300f, 116f), new Vector2(0.5f, 0.5f));
+        bm.playerTreeLabel = bm.playerTreeButton.GetComponentInChildren<TMPro.TMP_Text>();
         bm.cardTemplate = CardTemplate(cat, hex);
+
+        var buildPage = bm.tabPages[1].transform;
+        bm.cardRow = CardRow("Cards", buildPage, 46, 330);
+        bm.buildingCardTemplate = BuildingCardTemplate(cat, hex);
 
         // ---------- placement ----------
         var place = Panel("Placement", root, new Vector2(1120f, 172f));
@@ -312,14 +363,31 @@ public static class BuildModeBuilder
     }
 
     // left-aligned row of cards (same inset as the panel's text)
-    static RectTransform CardRow(string name, Transform parent, float yTop)
+    // Scrolls sideways (drag) once there are more cards than fit; the returned content row is where cards get added.
+    static RectTransform CardRow(string name, Transform parent, float yTop, float h = 168f)
     {
-        var row = R(name, parent, 0, yTop, 1090, 168);
+        var view = R(name + " View", parent, 0, yTop, 1090, h);
+        view.gameObject.AddComponent<RectMask2D>();
+        AddImage(view, new Color(0f, 0f, 0f, 0f));   // invisible, but takes drags in the gaps between cards
+        var row = NewRect(name, view);
+        row.anchorMin = new Vector2(0f, 0f); row.anchorMax = new Vector2(0f, 1f);
+        row.pivot = new Vector2(0f, 0.5f);
+        row.anchoredPosition = Vector2.zero;
+        row.sizeDelta = new Vector2(1090f, 0f);
         var hl = row.gameObject.AddComponent<HorizontalLayoutGroup>();
-        hl.spacing = 22; hl.childAlignment = TextAnchor.MiddleLeft;
-        hl.padding = new RectOffset(13, 0, 0, 0);
+        hl.spacing = 18; hl.childAlignment = TextAnchor.MiddleLeft;
+        hl.padding = new RectOffset(13, 13, 0, 0);
         hl.childControlWidth = false; hl.childControlHeight = false;
         hl.childForceExpandWidth = false; hl.childForceExpandHeight = false;
+        var fit = row.gameObject.AddComponent<ContentSizeFitter>();
+        fit.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+        fit.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+        var sr = view.gameObject.AddComponent<ScrollRect>();
+        sr.viewport = view; sr.content = row;
+        sr.horizontal = true; sr.vertical = false;
+        sr.movementType = ScrollRect.MovementType.Clamped;
+        sr.inertia = true; sr.decelerationRate = 0.1f;
+        sr.scrollSensitivity = 30f;
         return row;
     }
 
@@ -353,6 +421,49 @@ public static class BuildModeBuilder
         card.nameText.enableAutoSizing = true; card.nameText.fontSizeMin = 16; card.nameText.fontSizeMax = 26;
         card.infoText = Txt("Info", rt, 60, 54, 210, 62, "3×3 tiles", 19, WorkshopTheme.Muted, TextAlignmentOptions.TopLeft, FontStyles.Normal);
         card.costText = Txt("Cost", rt, 60, 122, 210, 34, "40 MATERIALS", 24, WorkshopTheme.Yellow, TextAlignmentOptions.Left);
+        rt.gameObject.SetActive(false);
+        return card;
+    }
+
+    // building card: spinning 3D model on top, name / size / build time / description, cost at the bottom
+    static BuildCard BuildingCardTemplate(Transform parent, Sprite hex)
+    {
+        var rt = R("BuildingCardTemplate", parent, 0, 0, 250, 322);
+        var bg = AddImage(rt, WorkshopTheme.Panel);
+        var card = rt.gameObject.AddComponent<BuildCard>();
+        card.button = rt.gameObject.AddComponent<Button>();
+        card.button.targetGraphic = bg;
+
+        var pv = R("PreviewBg", rt, 0, 0, 250, 172);
+        AddImage(pv, WorkshopTheme.PanelDark, false);
+        var img = NewRect("Preview", pv); Stretch(img);
+        var raw = img.gameObject.AddComponent<RawImage>();
+        raw.color = new Color(1f, 1f, 1f, 0f);   // ModelPreview turns it on with its render texture
+        raw.raycastTarget = false;                // taps go to the card
+        var mp = img.gameObject.AddComponent<ModelPreview>();
+        mp.elevation = 26f;
+        mp.padding = 0.95f;
+        mp.lightFollowsCamera = true;
+        mp.fillIntensity = 2.5f;
+        mp.autoSpin = 24f;
+        mp.startYaw = -30f;
+        mp.maxTextureSize = 512;
+        card.preview = mp;
+
+        // colour bar under the preview + small hex badge with the glyph
+        var bar = R("ColorBar", rt, 0, 172, 250, 6);
+        card.icon = AddImage(bar, WorkshopTheme.Orange, false);
+        var ic = Place(NewRect("Badge", rt), new Vector2(0f, 1f), new Vector2(28f, -26f), new Vector2(42f, 37f));
+        var badge = AddImage(ic, WorkshopTheme.Orange, false);
+        badge.sprite = hex; badge.preserveAspect = true;
+        var g = NewRect("Glyph", ic); Stretch(g);
+        card.glyph = AddText(g, "C", 24, WorkshopTheme.DarkText);
+        card.badge = badge;
+
+        card.nameText = Txt("Name", rt, 0, 184, 228, 32, "CHARGING STATION", 24, Color.white, TextAlignmentOptions.Left);
+        card.nameText.enableAutoSizing = true; card.nameText.fontSizeMin = 15; card.nameText.fontSizeMax = 24;
+        card.infoText = Txt("Info", rt, 0, 218, 228, 66, "3×3 tiles", 16, WorkshopTheme.Muted, TextAlignmentOptions.TopLeft, FontStyles.Normal);
+        card.costText = Txt("Cost", rt, 0, 286, 228, 30, "40 MATERIALS", 22, WorkshopTheme.Yellow, TextAlignmentOptions.Left);
         rt.gameObject.SetActive(false);
         return card;
     }

@@ -6,7 +6,7 @@ using UnityEngine.UI;
 
 /// In-game debug panel (Editor + development builds only). Creates itself on scene load:
 /// a small DEBUG button top-left that opens a panel of test shortcuts.
-/// Add a button: one Btn(...) line in BuildPanel().
+/// Tabs (GAME / BOTS / DISKS / COMBAT / WORLD); add a button with one Btn(...) line in that tab's Build...Tab().
 public class DebugMenu : MonoBehaviour
 {
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -56,12 +56,20 @@ public class DebugMenu : MonoBehaviour
         rt.sizeDelta = new Vector2(150f, 62f);
     }
 
+    // tabs: one page of buttons visible at a time (the last tab stays selected between openings)
+    static readonly string[] TabNames = { "GAME", "BOTS", "DISKS", "COMBAT", "WORLD" };
+    static int currentTab;
+    readonly List<RectTransform> pages = new List<RectTransform>();
+    readonly List<Image> tabBgs = new List<Image>();
+    readonly List<TMP_Text> tabLabels = new List<TMP_Text>();
+    RectTransform disksPage;
+
     void BuildPanel()
     {
         var p = NewRect("DebugPanel", transform);
         p.anchorMin = p.anchorMax = p.pivot = new Vector2(0f, 1f);
         p.anchoredPosition = new Vector2(16f, -100f);
-        p.sizeDelta = new Vector2(540f, 0f);
+        p.sizeDelta = new Vector2(560f, 0f);
         var bg = p.gameObject.AddComponent<Image>();
         bg.sprite = round; bg.type = Image.Type.Sliced; bg.color = PanelCol;
         var vl = p.gameObject.AddComponent<VerticalLayoutGroup>();
@@ -76,54 +84,206 @@ public class DebugMenu : MonoBehaviour
         // title row
         var title = NewRect("Title", p);
         title.gameObject.AddComponent<LayoutElement>().preferredHeight = 50;
-        var tt = Label(title, "DEBUG", 34, Accent, TextAlignmentOptions.Left);
+        Label(title, "DEBUG", 34, Accent, TextAlignmentOptions.Left);
         var close = Btn("X", title, () => Show(false), Danger, Color.white);
         var crt = (RectTransform)close.transform;
         crt.anchorMin = crt.anchorMax = crt.pivot = new Vector2(1f, 0.5f);
         crt.anchoredPosition = Vector2.zero;
         crt.sizeDelta = new Vector2(56f, 50f);
-        _ = tt;
 
         var infoRt = NewRect("Info", p);
         infoRt.gameObject.AddComponent<LayoutElement>().preferredHeight = 64;
         info = Label(infoRt, "", 20, new Color(0.9f, 0.88f, 0.82f), TextAlignmentOptions.TopLeft);
         info.fontStyle = FontStyles.Normal;
 
-        var g = Section(p, "ECONOMY");
+        // tab bar
+        var bar = NewRect("Tabs", p);
+        bar.gameObject.AddComponent<LayoutElement>().preferredHeight = 54;
+        var hl = bar.gameObject.AddComponent<HorizontalLayoutGroup>();
+        hl.spacing = 6;
+        hl.childControlWidth = true; hl.childControlHeight = true;
+        hl.childForceExpandWidth = true; hl.childForceExpandHeight = true;
+        for (int i = 0; i < TabNames.Length; i++)
+        {
+            int ii = i;
+            var tb = Btn(TabNames[i], bar, () => SelectTab(ii));
+            tabBgs.Add((Image)tb.targetGraphic);
+            tabLabels.Add(tb.GetComponentInChildren<TMP_Text>());
+        }
+
+        BuildGameTab(Page(p, "GAME"));
+        BuildBotsTab(Page(p, "BOTS"));
+        disksPage = Page(p, "DISKS");
+        BuildCombatTab(Page(p, "COMBAT"));
+        BuildWorldTab(Page(p, "WORLD"));
+        SelectTab(currentTab);
+    }
+
+    RectTransform Page(RectTransform parent, string name)
+    {
+        var pg = NewRect("Page " + name, parent);
+        var vl = pg.gameObject.AddComponent<VerticalLayoutGroup>();
+        vl.padding = new RectOffset(0, 0, 4, 0);
+        vl.spacing = 6;
+        vl.childControlWidth = true; vl.childControlHeight = true;
+        vl.childForceExpandWidth = true; vl.childForceExpandHeight = false;
+        pages.Add(pg);
+        return pg;
+    }
+
+    void SelectTab(int i)
+    {
+        currentTab = Mathf.Clamp(i, 0, pages.Count - 1);
+        for (int k = 0; k < pages.Count; k++)
+        {
+            bool on = k == currentTab;
+            pages[k].gameObject.SetActive(on);
+            tabBgs[k].color = on ? Accent : BtnCol;
+            tabLabels[k].color = on ? new Color32(34, 27, 19, 255) : Color.white;
+        }
+        if (pages[currentTab] == disksPage) BuildDisksTab();   // the disk list is read fresh each time
+    }
+
+    void BuildGameTab(RectTransform p)
+    {
+        var g = Section(p, "MATERIALS");
         Btn("+100 MATS", g, () => AddMats(100));
         Btn("+1000 MATS", g, () => AddMats(1000));
         Btn("ZERO MATS", g, () => { var e = Economy.Instance; if (e != null) e.TrySpend(e.materials); }, Danger);
 
-        g = Section(p, "FACTORY");
-        Btn("SPAWN 1 BOT", g, () => Spawn(1, false));
-        Btn("SPAWN 5 BOTS", g, () => Spawn(5, false));
-        Btn("5 + PROGRAM", g, () => Spawn(5, true));
+        g = Section(p, "NEAREST FACTORY");
         Btn("LEVEL +1", g, () => WithUpgrades(u => u.DevSetLevel(u.Level + 1)));
         Btn("MAX LEVEL", g, () => WithUpgrades(u => u.DevSetLevel(u.MaxLevel)));
         Btn("RESET TREE", g, () => WithUpgrades(u => u.DevReset()), Danger);
 
-        g = Section(p, "BOTS");
-        Btn("GIVE DISK", g, GiveDisk);
-        Btn("PROGRAM ALL", g, ProgramAll);
-        Btn("BATTERY 100%", g, () => SetBattery(1f));
-        Btn("BATTERY 20%", g, () => SetBattery(0.2f));
-        Btn("BATTERY 0%", g, () => SetBattery(0f), Danger);
-        Btn("DELETE BOTS", g, DeleteBots, Danger);
+        // the pipe's level follows the player's level
+        g = Section(p, "PLAYER");
+        Btn("PLAYER LV +1", g, () => { var u = PlayerUpgrades.Instance; if (u != null) u.Upgrades.DevSetLevel(u.Level + 1); });
+        Btn("PLAYER MAX", g, () => { var u = PlayerUpgrades.Instance; if (u != null) u.Upgrades.DevSetLevel(u.Upgrades.MaxLevel); });
+        Btn("PLAYER RESET", g, () => { var u = PlayerUpgrades.Instance; if (u != null) u.Upgrades.DevReset(); }, Danger);
 
         g = Section(p, "BATTERIES");
         Btn("GIVE COMMON", g, () => GiveBattery(Rarity.Common));
         Btn("GIVE RARE", g, () => GiveBattery(Rarity.Rare));
         Btn("GIVE 1 EACH", g, () => { foreach (Rarity r in System.Enum.GetValues(typeof(Rarity))) GiveBattery(r); });
+    }
 
-        g = Section(p, "WORLD");
-        speedLabel = Btn("SPEED x1", g, CycleSpeed).GetComponentInChildren<TMP_Text>();
+    void BuildBotsTab(RectTransform p)
+    {
+        var g = Section(p, "SPAWN");
+        Btn("SPAWN 1 BOT", g, () => Spawn(1, false));
+        Btn("SPAWN 5 BOTS", g, () => Spawn(5, false));
+        Btn("5 + PROGRAM", g, () => Spawn(5, true));
+        Btn("SPAWN DRONE", g, SpawnDrone);
+        Btn("3 DRONES", g, () => { for (int i = 0; i < 3; i++) SpawnDrone(); });
+        Btn("DELETE BOTS", g, DeleteBots, Danger);
+
+        g = Section(p, "BATTERY (ALL BOTS)");
+        Btn("BATTERY 100%", g, () => SetBattery(1f));
+        Btn("BATTERY 20%", g, () => SetBattery(0.2f));
+        Btn("BATTERY 0%", g, () => SetBattery(0f), Danger);
+
+        g = Section(p, "HEALTH");
+        Btn("DMG BOT -25", g, () => { var b = NearestBot(); if (b != null && b.Health != null) b.Health.Damage(25f); });
+        Btn("BREAK BOT", g, () => { var b = NearestBot(); if (b != null && b.Health != null) b.Health.Kill(); }, Danger);
+        Btn("REPAIR BOTS", g, () => { foreach (var b in ScoutBot.All) b.Repair(); });
+    }
+
+    // one button per disk program: give it to the player, or put it straight into every robot it fits
+    void BuildDisksTab()
+    {
+        var p = disksPage;
+        for (int i = p.childCount - 1; i >= 0; i--)
+        {
+            var c = p.GetChild(i).gameObject;
+            c.SetActive(false);
+            Destroy(c);
+        }
+        var all = AllDisks();
+        var inv = PlayerInventory.Instance;
+
+        var g = Section(p, "GIVE TO PLAYER  (tap = +1)");
+        foreach (var d in all)
+        {
+            var disk = d;
+            int have = inv != null ? inv.CountOf(disk) : 0;
+            Btn(DiskText(disk) + (have > 0 ? "  x" + have : ""), g, () => { GiveDisk(disk); BuildDisksTab(); }, disk.color, new Color32(24, 20, 14, 255));
+        }
+        if (all.Count == 0) Btn("NO DISKS FOUND", g, () => { });
+
+        g = Section(p, "INVENTORY");
+        Btn("GIVE 1 EACH", g, () => { foreach (var d in AllDisks()) GiveDisk(d); BuildDisksTab(); });
+        Btn("DRONE DISKS", g, () => { foreach (var d in AllDisks()) if (d.FitsOn(RobotType.Drone)) GiveDisk(d); BuildDisksTab(); });
+        Btn("CLEAR DISKS", g, () => { if (inv != null) inv.SetDisks(new List<DiskProgram>()); BuildDisksTab(); }, Danger);
+
+        g = Section(p, "PUT IN ALL ROBOTS IT FITS");
+        foreach (var d in all)
+        {
+            var disk = d;
+            Btn(DiskText(disk), g, () => ProgramAllWith(disk), disk.color, new Color32(24, 20, 14, 255));
+        }
+        Btn("REMOVE FROM ALL", g, () => { foreach (var b in ScoutBot.All) b.SetProgram(null); GameToast.Show("ALL ROBOTS: NO DISK", Accent); }, Danger);
+    }
+
+    static string DiskText(DiskProgram d) => d.displayName.ToUpper() + "  " + RobotTypes.Glyph(d.compatibleWith);
+
+    /// Every disk program in the game: loaded assets plus anything on the map, in robots, factories or the inventory.
+    static List<DiskProgram> AllDisks()
+    {
+        var set = new HashSet<DiskProgram>();
+        foreach (var d in Resources.FindObjectsOfTypeAll<DiskProgram>()) if (d != null) set.Add(d);
+        foreach (var d in FindObjectsByType<DiskPickup>(FindObjectsInactive.Include, FindObjectsSortMode.None)) if (d.program != null) set.Add(d.program);
+        foreach (var b in ScoutBot.All) if (b.Program != null) set.Add(b.Program);
+        var inv = PlayerInventory.Instance;
+        if (inv != null) foreach (var d in inv.disks) if (d != null) set.Add(d);
+        var list = new List<DiskProgram>(set);
+        // gatherer disks first, then drone disks, by name
+        list.Sort((a, b) => a.compatibleWith != b.compatibleWith ? a.compatibleWith.CompareTo(b.compatibleWith) : string.CompareOrdinal(a.displayName, b.displayName));
+        return list;
+    }
+
+    static void GiveDisk(DiskProgram d)
+    {
+        var inv = PlayerInventory.Instance;
+        if (inv == null || d == null) return;
+        inv.Add(d);
+        GameToast.Show("+1 " + d.displayName.ToUpper() + " DISK", d.color);
+    }
+
+    static void ProgramAllWith(DiskProgram d)
+    {
+        int n = 0;
+        foreach (var b in ScoutBot.All) if (d.FitsOn(b.robotType)) { b.SetProgram(d); n++; }
+        GameToast.Show(n > 0 ? d.displayName.ToUpper() + " IN " + n + (n == 1 ? " ROBOT" : " ROBOTS") : "NO " + RobotTypes.Name(d.compatibleWith) + " TO PROGRAM", d.color);
+    }
+
+    void BuildCombatTab(RectTransform p)
+    {
+        var g = Section(p, "ENEMIES");
+        Btn("SPAWN DUMMY", g, () => SpawnDummy(false));
+        Btn("SPAWN SHOOTER", g, () => SpawnDummy(true));
+        Btn("FIRE AT ENEMY", g, FireAtEnemy);
+        Btn("KILL ENEMIES", g, KillEnemies, Danger);
+
+        g = Section(p, "PLAYER");
+        Btn("DMG PLAYER -20", g, () => { var ph = PlayerHealth.Instance; if (ph != null) ph.Health.Damage(20f); });
+        Btn("HEAL PLAYER", g, () => { var ph = PlayerHealth.Instance; if (ph != null) ph.Health.HealFull(); });
+        Btn("KO PLAYER", g, () => { var ph = PlayerHealth.Instance; if (ph != null) ph.Health.Kill(); }, Danger);
+        TMP_Text godLabel = null;
+        godLabel = Btn("GOD MODE: " + (PlayerHealth.GodMode ? "ON" : "OFF"), g, () => { PlayerHealth.GodMode = !PlayerHealth.GodMode; godLabel.text = PlayerHealth.GodMode ? "GOD MODE: ON" : "GOD MODE: OFF"; }).GetComponentInChildren<TMP_Text>();
+    }
+
+    void BuildWorldTab(RectTransform p)
+    {
+        var g = Section(p, "TELEPORT");
         Btn("TP FACTORY", g, () => Teleport(Fac() != null ? Fac().transform : null, -4f));
         Btn("TP CHARGER", g, () => Teleport(ChargingStation.All.Count > 0 ? ChargingStation.All[0].transform : null, 4f));
         Btn("TP RECYCLER", g, () => Teleport(HomeBase.All.Count > 0 ? HomeBase.All[0].transform : null, -4.5f));
+
+        g = Section(p, "TOGGLES");
+        speedLabel = Btn("SPEED x1", g, CycleSpeed).GetComponentInChildren<TMP_Text>();
         TMP_Text freeLabel = null, fogLabel = null, pipeLabel = null;
         pipeLabel = Btn("PIPE: ON", g, () => { PipeTether.Disabled = !PipeTether.Disabled; pipeLabel.text = PipeTether.Disabled ? "PIPE: OFF" : "PIPE: ON"; }).GetComponentInChildren<TMP_Text>();
-        Btn("PIPE LV +1", g, () => { var t = PipeTether.Instance; if (t != null) t.SetLevel(t.level + 1); });
-        Btn("PIPE LV 1", g, () => { var t = PipeTether.Instance; if (t != null) t.SetLevel(1); }, Danger);
         freeLabel = Btn("FREE BUILD: OFF", g, () => { BuildMode.FreeBuild = !BuildMode.FreeBuild; freeLabel.text = BuildMode.FreeBuild ? "FREE BUILD: ON" : "FREE BUILD: OFF"; }).GetComponentInChildren<TMP_Text>();
         fogLabel = Btn("REVEAL MAP: OFF", g, () =>
         {
@@ -133,6 +293,70 @@ public class DebugMenu : MonoBehaviour
             fog.Refresh();
             fogLabel.text = fog.revealAll ? "REVEAL MAP: ON" : "REVEAL MAP: OFF";
         }).GetComponentInChildren<TMP_Text>();
+    }
+
+    static Transform PlayerT()
+    {
+        var p = GameObject.FindWithTag("Player");
+        return p != null ? p.transform : null;
+    }
+
+    static ScoutBot NearestBot()
+    {
+        var p = PlayerT();
+        ScoutBot best = null; float bd = float.MaxValue;
+        foreach (var b in ScoutBot.All)
+        {
+            float d = p != null ? (b.transform.position - p.position).sqrMagnitude : 0f;
+            if (d < bd) { bd = d; best = b; }
+        }
+        return best;
+    }
+
+    static void SpawnDummy(bool shooter)
+    {
+        var p = PlayerT();
+        if (p == null) return;
+        Vector3 fwd = p.forward; fwd.y = 0f;
+        if (fwd.sqrMagnitude < 0.01f) fwd = Vector3.forward;
+        var d = TargetDummy.Spawn(p.position + fwd.normalized * (shooter ? 9f : 5f), shooter);
+        d.transform.rotation = Quaternion.LookRotation(-fwd);
+        GameToast.Show(shooter ? "SHOOTER DUMMY SPAWNED" : "DUMMY SPAWNED", new Color(1f, 0.6f, 0.25f));
+    }
+
+    static readonly ShotSpec debugShot = new ShotSpec { damage = 20f, speed = 24f };
+
+    static void FireAtEnemy()
+    {
+        var p = PlayerT();
+        if (p == null) return;
+        var t = Targeting.FindNearest(Team.Enemy, p.position, 40f);
+        if (t == null) { GameToast.Show("NO ENEMY IN RANGE", new Color(1f, 0.6f, 0.25f)); return; }
+        Projectile.Fire(p.position + Vector3.up * 1.4f + p.forward * 0.6f, t, debugShot, Team.Player, p.gameObject);
+    }
+
+    // C3: a combat drone next to the player (from the Drone Bay prefab, built with that bay's stats if there is one)
+    static void SpawnDrone()
+    {
+        BotFactory bay = null;
+        foreach (var f in BotFactory.All) if (f.botPrefab != null && f.botPrefab.GetComponent<CombatDrone>() != null) { bay = f; break; }
+        if (bay != null) { bay.DevSpawnNow(); GameToast.Show("DRONE SPAWNED AT THE BAY", new Color(0.45f, 0.95f, 1f)); return; }
+        var prefab = Resources.FindObjectsOfTypeAll<CombatDrone>();
+        CombatDrone src = null;
+        foreach (var c in prefab) if (!c.gameObject.scene.IsValid()) { src = c; break; }
+        var p = PlayerT();
+        if (src == null || p == null) { GameToast.Show("NO DRONE PREFAB (RUN BUILDER 12)", new Color(1f, 0.45f, 0.35f)); return; }
+        var go = Instantiate(src.gameObject, p.position + p.right * 2.5f, Quaternion.identity);
+        var d = go.GetComponent<CombatDrone>();
+        d.SourcePrefab = src.gameObject;
+        d.Init(go.transform.position, 900 + ScoutBot.All.Count);
+        GameToast.Show("DRONE SPAWNED (NO BAY)", new Color(0.45f, 0.95f, 1f));
+    }
+
+    static void KillEnemies()
+    {
+        var list = new List<Health>(Health.All(Team.Enemy));
+        foreach (var h in list) if (h != null && !h.IsDead) h.Kill();
     }
 
     Transform Section(RectTransform parent, string name)
@@ -209,9 +433,10 @@ public class DebugMenu : MonoBehaviour
     static DiskProgram FirstProgram()
     {
         foreach (var d in FindObjectsByType<DiskPickup>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-            if (d.program != null) return d.program;
+            if (d.program != null && d.program.FitsOn(RobotType.Gatherer)) return d.program;
         var inv = PlayerInventory.Instance;
-        return inv != null && inv.disks.Count > 0 ? inv.disks[0] : null;
+        if (inv != null) foreach (var d in inv.disks) if (d.FitsOn(RobotType.Gatherer)) return d;
+        return null;
     }
 
     static void Spawn(int n, bool program)
@@ -225,25 +450,12 @@ public class DebugMenu : MonoBehaviour
             for (int i = before; i < ScoutBot.All.Count; i++) ScoutBot.All[i].SetProgram(prog);
     }
 
-    static void GiveDisk()
-    {
-        var prog = FirstProgram();
-        if (prog != null && PlayerInventory.Instance != null) PlayerInventory.Instance.Add(prog);
-    }
-
     static void GiveBattery(Rarity r)
     {
         var inv = PlayerInventory.Instance;
         if (inv == null) return;
         foreach (var b in BatteryItem.LoadAll())
             if (b.rarity == r) { if (!inv.AddBattery(b)) GameToast.Show("BATTERY SLOTS FULL", new Color(1f, 0.4f, 0.32f)); return; }
-    }
-
-    static void ProgramAll()
-    {
-        var prog = FirstProgram();
-        if (prog == null) return;
-        foreach (var b in ScoutBot.All) if (b.Program == null) b.SetProgram(prog);
     }
 
     static void SetBattery(float f)
@@ -293,7 +505,7 @@ public class DebugMenu : MonoBehaviour
         int total = ScoutBot.All.Count, dead = 0, charging = 0, idle = 0;
         foreach (var b in ScoutBot.All)
         {
-            if (b.IsDead) dead++;
+            if (b.IsDown) dead++;
             else if (b.SeekingCharge) charging++;
             else if (b.Program == null) idle++;
         }
@@ -301,7 +513,9 @@ public class DebugMenu : MonoBehaviour
         foreach (var s in ChargingStation.All) queue += s.Queued;
         var f = Fac();
         string fac = f != null ? "Factory Lv " + (f.Upgrades != null ? f.Upgrades.Level : 1) + "  ·  build " + f.BuildTime.ToString("0.#") + "s  ·  queued " + f.Queued : "";
-        info.text = "Bots " + total + "  ·  no disk " + idle + "  ·  charging " + charging + "  ·  queue " + queue + "  ·  dead " + dead +
+        var ph = PlayerHealth.Instance;
+        string hp = ph != null ? "HP " + Mathf.CeilToInt(ph.Health.Current) + "/" + Mathf.RoundToInt(ph.Health.maxHP) + (PlayerHealth.GodMode ? " GOD" : "") + "  ·  enemies " + Health.All(Team.Enemy).Count + "  ·  " : "";
+        info.text = hp + "Bots " + total + "  ·  no disk " + idle + "  ·  charging " + charging + "  ·  queue " + queue + "  ·  dead " + dead +
                     "\n" + fac + "  ·  " + Mathf.RoundToInt(1f / Mathf.Max(0.0001f, Time.unscaledDeltaTime)) + " fps";
     }
 }

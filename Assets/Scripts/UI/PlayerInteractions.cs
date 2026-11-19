@@ -51,6 +51,8 @@ public class PlayerInteractions : MonoBehaviour
                 f.SetHighlight(true);
                 bool canUpgrade = upgradeButton != null && workshop != null && f.Upgrades != null;
                 factoryButton.Show(f.transform, factoryButtonOffset, () => factoryPopup.Open(f), canUpgrade ? -factoryButtonSpread : Vector2.zero);
+                var fl = factoryButton.GetComponentInChildren<TMPro.TMP_Text>(true);
+                if (fl != null) fl.text = "BUILD " + f.UnitWord + "S";   // BUILD BOTS / BUILD DRONES
                 if (canUpgrade) upgradeButton.Show(f.transform, factoryButtonOffset, () => workshop.Open(f), factoryButtonSpread);
                 upgradeAlert = -1;
             }
@@ -75,7 +77,7 @@ public class PlayerInteractions : MonoBehaviour
         if (best != shownBot)
         {
             shownBot = best;
-            if (best != null) botButton.Show(best.transform, botButtonOffset, () => botPopup.Open(best));
+            if (best != null) botButton.Show(best.transform, botButtonOffset + Vector3.up * best.ButtonHeight, () => botPopup.Open(best));
             else botButton.Hide();
         }
     }
@@ -145,7 +147,7 @@ public class PlayerInteractions : MonoBehaviour
         var u = shownFactory.Upgrades;
         var inv = PlayerInventory.Instance;
         bool batteryWaiting = u.equippedBattery == null && inv != null && inv.batteries.Count > 0;
-        bool diskWaiting = u.MasterDiskUnlocked && u.masterDisk == null && inv != null && inv.disks.Count > 0;
+        bool diskWaiting = u.MasterDiskUnlocked && u.masterDisk == null && inv != null && inv.disks.Exists(d => d != null && d.FitsOn(u.OutputType));
         int alert = u.UnspentPoints > 0 || u.CanAffordLevelUp || batteryWaiting || diskWaiting ? 1 : 0;
         if (alert == upgradeAlert) return;
         upgradeAlert = alert;

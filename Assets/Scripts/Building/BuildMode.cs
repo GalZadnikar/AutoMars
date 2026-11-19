@@ -7,10 +7,12 @@ using UnityEngine.UI;
 using UnityEngine.InputSystem;
 #endif
 
-/// Base construction. Stand at the base and tap its floating BASE button → a popup lists the buildings.
-/// Pick one → the player stops, the camera goes top-down over a build cursor and the joystick moves that
+/// Base popup + construction. Stand at the base and tap its floating BASE button → a popup with two tabs:
+/// PLAYER (player level, stats, LEVEL UP, UPGRADE TREE = the Workshop with the player's perk tree) and
+/// BUILD (building cards with a spinning 3D preview).
+/// Pick a building → the player stops, the camera goes top-down over a build cursor and the joystick moves that
 /// cursor (WASD in the Editor) → its blueprint snaps to the grid → ROTATE / PLACE / BACK (back = the popup).
-/// Placing flattens the ground under it and starts a construction site that finishes after the building's build time.
+/// Placing flattens the ground, starts a construction site and goes back to the popup (BUILD tab).
 public class BuildMode : MonoBehaviour
 {
     /// Debug: building costs nothing.
@@ -26,9 +28,22 @@ public class BuildMode : MonoBehaviour
     public Button menuCloseButton, menuBackdrop;
     public TMP_Text menuMaterialsText;
     public RectTransform cardRow;
-    [Tooltip("Row for the base upgrade cards (pipe length)")]
-    public RectTransform upgradeRow;
+    [Tooltip("Old building card template (fallback)")]
     public BuildCard cardTemplate;
+    [Tooltip("Building card template (with a 3D preview); falls back to cardTemplate")]
+    public BuildCard buildingCardTemplate;
+
+    [Header("PLAYER tab")]
+    public ModelPreview playerPreview;
+    public TMP_Text playerLevelText, playerPointsText, playerStatsText, playerNextText;
+    public Button playerLevelUpButton, playerTreeButton;
+    public TMP_Text playerLevelUpLabel, playerTreeLabel;
+    [Tooltip("The Workshop screen (found automatically)")]
+    public WorkshopScreen workshop;
+
+    [Header("Tabs (0 = PLAYER, 1 = BUILD)")]
+    public Button[] tabButtons;
+    public GameObject[] tabPages;
 
     [Header("Placement UI")]
     public GameObject placePanel;
@@ -50,8 +65,11 @@ public class BuildMode : MonoBehaviour
     [Tooltip("Width of the slope that blends the flattened pad back into the terrain")]
     public float levelMargin = 2.5f;
 
+    public const int PlayerTab = 0, BuildTab = 1;
+    static readonly string[] TabNames = { "PLAYER", "BUILD" };
+
     readonly List<BuildCard> cards = new List<BuildCard>();
-    BuildCard pipeCard;
+    int tab = PlayerTab;
     readonly Dictionary<Vector2Int, BuildGrid.CellState> states = new Dictionary<Vector2Int, BuildGrid.CellState>();
     BuildingDef current;
     GameObject ghost;
@@ -78,22 +96,33 @@ public class BuildMode : MonoBehaviour
         cancelButton.onClick.AddListener(Back);
         placeButton.onClick.AddListener(Place);
 
+        if (tabButtons != null)
+            for (int i = 0; i < tabButtons.Length; i++)
+            {
+                int t = i;
+                if (tabButtons[i] != null) tabButtons[i].onClick.AddListener(() => SetTab(t));
+            }
+
+        var bTemplate = buildingCardTemplate != null ? buildingCardTemplate : cardTemplate;
+        int n = 0;
         foreach (var def in catalog)
         {
             if (def == null || def.prefab == null) continue;
-            var c = Instantiate(cardTemplate, cardRow);
+            var c = Instantiate(bTemplate, cardRow);
             c.gameObject.SetActive(true);
+            // every preview gets its own spot high above the base: the fog of war darkens anything over unexplored ground,
+            // so the rigs are stacked in height over the (always explored) base instead of spread sideways
+            if (c.preview != null) c.preview.rigPosition = new Vector3(0f, 700f + 100f * n, 0f);
+            n++;
             var d = def;
             c.Setup(def, () => Begin(d));
             cards.Add(c);
         }
 
-        if (upgradeRow != null && cardTemplate != null)
-        {
-            pipeCard = Instantiate(cardTemplate, upgradeRow);
-            pipeCard.gameObject.SetActive(true);
-            pipeCard.SetupCustom("P", WorkshopTheme.Cyan, PipeUpgrade);
-        }
+        PlayerUpgrades.Ensure();
+        if (workshop == null) workshop = FindFirstObjectByType<WorkshopScreen>(FindObjectsInactive.Include);
+        if (playerLevelUpButton != null) playerLevelUpButton.onClick.AddListener(PlayerLevelUp);
+        if (playerTreeButton != null) playerTreeButton.onClick.AddListener(OpenPlayerTree);
 
         var ov = new GameObject("Build Grid Overlay", typeof(MeshFilter), typeof(MeshRenderer));
         ov.GetComponent<MeshRenderer>().sharedMaterial = overlayMaterial;
@@ -129,22 +158,53 @@ public class BuildMode : MonoBehaviour
         hintText.gameObject.SetActive(false);
     }
 
-    /// The BASE button calls this: the popup with the buildings.
-    public void OpenMenu()
+    /// The BASE button calls this. Opens on the last used tab (or the given one).
+    public void OpenMenu() => OpenMenu(-1);
+
+    public void OpenMenu(int openTab)
     {
         if (UIState.ModalOpen || UIState.BuildMode) return;
         menuPanel.SetActive(true);
         menuPanel.transform.SetAsLastSibling();
         UIState.ModalOpen = true;
         refreshT = 0f;
+        SetTab(openTab >= 0 ? openTab : tab);
         RefreshMenu();
     }
 
     public void CloseMenu()
     {
         if (!menuPanel.activeSelf) return;
+        foreach (var c in cards) c.ShowPreview(false);
+        if (playerPreview != null) playerPreview.Hide();
         menuPanel.SetActive(false);
         UIState.ModalOpen = false;
+    }
+
+    public void SetTab(int t)
+    {
+        int count = tabPages != null ? tabPages.Length : 0;
+        if (count == 0) return;
+        tab = Mathf.Clamp(t, 0, count - 1);
+        for (int i = 0; i < count; i++)
+        {
+            if (tabPages[i] != null) tabPages[i].SetActive(i == tab);
+            if (tabButtons == null || i >= tabButtons.Length || tabButtons[i] == null) continue;
+            bool on = i == tab;
+            tabButtons[i].targetGraphic.color = on ? WorkshopTheme.Orange : WorkshopTheme.ButtonOff;
+            var label = tabButtons[i].GetComponentInChildren<TMP_Text>();
+            if (label != null) label.color = on ? WorkshopTheme.DarkText : WorkshopTheme.White;
+        }
+        // previews only render while the BUILD tab is showing
+        Canvas.ForceUpdateCanvases();
+        foreach (var c in cards) c.ShowPreview(menuPanel.activeSelf && tab == BuildTab);
+        if (playerPreview != null)
+        {
+            var pu = PlayerUpgrades.Instance;
+            if (menuPanel.activeSelf && tab == PlayerTab && pu != null) playerPreview.Show(PlayerModel(pu));
+            else playerPreview.Hide();
+        }
+        RefreshMenu();
     }
 
     // popup card tapped: leave the popup, switch to the top-down view and start placing
@@ -250,34 +310,93 @@ public class BuildMode : MonoBehaviour
         if (current != null) UpdatePlacement();
     }
 
-    void PipeUpgrade()
+    static GameObject PlayerModel(PlayerUpgrades pu) => pu.previewPrefab != null ? pu.previewPrefab : pu.gameObject;
+
+    void PlayerLevelUp()
     {
-        var pt = PipeTether.Instance;
-        if (pt != null) pt.UpgradeWithFeedback();
+        var pu = PlayerUpgrades.Instance;
+        if (pu == null) return;
+        var up = pu.Upgrades;
+        if (up.IsMaxLevel) { GameToast.Show("PLAYER IS AT MAX LEVEL", WorkshopTheme.Orange); return; }
+        int cost = up.NextLevelCost;
+        if (up.TryLevelUp())
+        {
+            var pt = PipeTether.Instance;
+            string pipe = pt == null ? "" : pt.IsPumped ? "  -  H2O PUMP" : "  -  PIPE " + Mathf.RoundToInt(pt.Range) + " m";
+            GameToast.Show("PLAYER LEVEL " + up.Level + "!" + pipe + (up.UnspentPoints > 0 ? "  -  +1 SKILL POINT" : ""), WorkshopTheme.Green);
+        }
+        else GameToast.Show("NEED " + cost + " MATERIALS", WorkshopTheme.Red);
         RefreshMenu();
+    }
+
+    void OpenPlayerTree()
+    {
+        var pu = PlayerUpgrades.Instance;
+        if (pu == null || workshop == null || pu.Upgrades.tree == null) return;
+        CloseMenu();
+        workshop.Open(pu.Upgrades, PlayerModel(pu), () => OpenMenu(PlayerTab));   // CLOSE in the Workshop = back here
+    }
+
+    void RefreshPlayer()
+    {
+        var pu = PlayerUpgrades.Instance;
+        var up = pu != null ? pu.Upgrades : null;
+        bool badge = false;
+        if (up != null && up.tree != null && playerLevelText != null)
+        {
+            string orange = WorkshopTheme.Hex(WorkshopTheme.Orange), green = WorkshopTheme.Hex(WorkshopTheme.Green);
+            int pts = up.UnspentPoints;
+            playerLevelText.text = "PLAYER LEVEL  <color=" + orange + ">" + up.Level + "</color> / " + up.MaxLevel;
+            playerPointsText.text = pts > 0 ? (pts == 1 ? "1 SKILL POINT" : pts + " SKILL POINTS") + " TO SPEND IN THE TREE" : "";
+
+            var cur = up.Current;
+            var sb = new System.Text.StringBuilder();
+            var list = up.tree.shownStats != null && up.tree.shownStats.Count > 0 ? up.tree.shownStats.ToArray() : Stats.FactoryStats;
+            foreach (var st in list)
+                sb.Append(Stats.Label(st)).Append("<pos=58%><color=#FFFFFF>").Append(Stats.Format(st, cur[st])).Append("</color>\n");
+            playerStatsText.text = sb.ToString();
+
+            var img = playerLevelUpButton.targetGraphic as Image;
+            if (up.IsMaxLevel)
+            {
+                playerLevelUpLabel.text = "MAX LEVEL";
+                if (img != null) img.color = WorkshopTheme.ButtonOff;
+                playerNextText.text = "Fully upgraded";
+            }
+            else
+            {
+                bool afford = up.CanAffordLevelUp;
+                badge |= afford;
+                playerLevelUpLabel.text = "LEVEL UP\n<size=65%>" + (FreeBuild ? "FREE (debug)" : up.NextLevelCost + " MATERIALS") + "</size>";
+                playerLevelUpLabel.color = afford ? Color.white : WorkshopTheme.Muted;
+                if (img != null) img.color = afford ? WorkshopTheme.ButtonGreen : WorkshopTheme.ButtonOff;
+                // what the next level brings: longer pipe (or the pump), +1 skill point
+                var pt = PipeTether.Instance;
+                string pipe = "";
+                if (pt != null && !pt.IsPumped)
+                {
+                    float next = pt.RangeAt(up.Level + 1);
+                    pipe = next >= Stats.NoLimit * 0.5f ? "Pipe > <color=" + green + ">H2O PUMP (no limit)</color>"
+                         : "Pipe " + Mathf.RoundToInt(pt.Range) + " > <color=" + green + ">" + Mathf.RoundToInt(next + pt.bonusRange) + " m</color>";
+                }
+                bool point = up.Level - 1 < up.TierCount;
+                playerNextText.text = "Next level:\n" + pipe + (point ? "\n<color=" + green + ">+1 skill point</color>" : "") + "\nBetter stats";
+            }
+            if (playerTreeLabel != null)
+                playerTreeLabel.text = "UPGRADE TREE" + (pts > 0 ? "\n<size=65%><color=" + orange + ">" + pts + " POINT" + (pts > 1 ? "S" : "") + " !</color></size>" : "");
+            badge |= pts > 0;
+        }
+        // "!" on the PLAYER tab when there is something to do there
+        if (tabButtons != null && tabButtons.Length > PlayerTab && tabButtons[PlayerTab] != null)
+        {
+            var l = tabButtons[PlayerTab].GetComponentInChildren<TMP_Text>();
+            if (l != null) l.text = TabNames[PlayerTab] + (badge ? "  !" : "");
+        }
     }
 
     void RefreshMenu()
     {
-        var pt = PipeTether.Instance;
-        if (pipeCard != null)
-        {
-            pipeCard.gameObject.SetActive(pt != null);
-            if (pt != null)
-            {
-                string title = "PIPE LENGTH  LV " + pt.level;
-                if (pt.IsPumped)
-                    pipeCard.SetTexts("PORTABLE H2O PUMP", "Worn on your back\nGo anywhere", "EQUIPPED", WorkshopTheme.Muted);
-                else if (pt.NextIsPump)
-                    pipeCard.SetTexts(title, "Range " + Mathf.RoundToInt(pt.Range) + " m > no limit\nPortable H2O pump replaces the pipe",
-                        (BuildMode.FreeBuild ? "FREE (debug)" : pt.NextCost + " MATERIALS"), pt.CanAffordUpgrade ? WorkshopTheme.Yellow : WorkshopTheme.Red);
-                else if (pt.IsMaxLevel)
-                    pipeCard.SetTexts(title, "Range " + Mathf.RoundToInt(pt.Range) + " m\nFully upgraded", "MAX LEVEL", WorkshopTheme.Muted);
-                else
-                    pipeCard.SetTexts(title, "Range " + Mathf.RoundToInt(pt.Range) + " > " + Mathf.RoundToInt(pt.NextRange) + " m\nHow far you can walk",
-                        (BuildMode.FreeBuild ? "FREE (debug)" : pt.NextCost + " MATERIALS"), pt.CanAffordUpgrade ? WorkshopTheme.Yellow : WorkshopTheme.Red);
-            }
-        }
+        RefreshPlayer();
         for (int i = 0; i < cards.Count && i < catalog.Count; i++) cards[i].SetCost(catalog[i].cost, Affordable(catalog[i]));
         if (menuMaterialsText != null)
             menuMaterialsText.text = "MATERIALS  " + (Economy.Instance != null ? Economy.Instance.materials : 0);
@@ -399,6 +518,9 @@ public class BuildMode : MonoBehaviour
         var pos = new Vector3(ghostPos.x, padY, ghostPos.z);
         ConstructionSite.Create(current, pos, ghostRot, ghostMaterial, constructionColor);
         GameToast.Show("BUILDING " + current.displayName.ToUpper() + "  (" + current.buildTime.ToString("0.#") + "s)", current.color);
-        dirty = true;   // the spot is taken now
+
+        // construction started: back to the base popup (BUILD tab) to pick the next thing or close
+        Exit();
+        OpenMenu(BuildTab);
     }
 }

@@ -226,7 +226,7 @@ public class Minimap : MonoBehaviour
             else if (m.kind == Kind.Bot)
             {
                 var bot = (ScoutBot)m.source;
-                m.image.color = bot.IsDead ? deadBotColor : bot.Program != null ? bot.Program.color : botColor;
+                m.image.color = bot.IsDown ? deadBotColor : bot.Program != null ? bot.Program.color : botColor;
             }
 
             if (showFogOfWar && (m.kind == Kind.Trash || m.kind == Kind.Disk || m.kind == Kind.Battery) && FogOfWar.Instance != null)

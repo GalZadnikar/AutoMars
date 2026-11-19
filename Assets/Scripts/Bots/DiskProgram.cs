@@ -8,6 +8,11 @@ public abstract class DiskProgram : ScriptableObject
     public string shortName = "PRG";
     [TextArea] public string description;
     public Color color = new Color(1f, 0.78f, 0.2f);
+    [Tooltip("Which robots can run this disk (existing disks = Gatherer)")]
+    public RobotType compatibleWith = RobotType.Gatherer;
+
+    /// Can a robot of this type run the disk?
+    public bool FitsOn(RobotType robot) => (compatibleWith & robot) != 0;
 
     public abstract BotBehaviour CreateBehaviour(ScoutBot bot);
 }

@@ -18,19 +18,27 @@ public class ModelPreview : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
     public float autoSpin = 22f;
     public float dragSpeed = 0.35f;
     public int maxTextureSize = 1024;
+    [Tooltip("Starting turn of the model (degrees)")]
+    public float startYaw = -35f;
+    [Tooltip("Fill light sits next to the camera (good for big, dark models like buildings)")]
+    public bool lightFollowsCamera;
+    [Tooltip("Fill light strength (scaled with camera distance when it follows the camera)")]
+    public float fillIntensity = 3f;
 
     RawImage image;
     Camera cam;
     Transform rig, turntable;
+    Light fill;
     RenderTexture rt;
     GameObject model, shownPrefab;
     int layer = -1;
-    float yaw = -35f, spin;
+    float yaw = float.NaN, spin;
     bool dragging;
 
     public void Show(GameObject prefab)
     {
         EnsureRig();
+        if (float.IsNaN(yaw)) yaw = startYaw;
         rig.gameObject.SetActive(true);
         if (prefab != shownPrefab)
         {
@@ -82,10 +90,10 @@ public class ModelPreview : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
         var lightGo = new GameObject("Preview Fill Light");
         lightGo.transform.SetParent(rig, false);
         lightGo.transform.localPosition = new Vector3(-3f, 5f, 6f);
-        var l = lightGo.AddComponent<Light>();
+        var l = fill = lightGo.AddComponent<Light>();
         l.type = LightType.Point;
         l.range = 25f;
-        l.intensity = 3f;
+        l.intensity = fillIntensity;
         l.color = new Color(1f, 0.92f, 0.82f);
         l.shadows = LightShadows.None;
         l.cullingMask = 1 << layer;
@@ -117,6 +125,9 @@ public class ModelPreview : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
         var behaviours = go.GetComponentsInChildren<MonoBehaviour>(true);
         for (int i = behaviours.Length - 1; i >= 0; i--) if (behaviours[i] != null) DestroyImmediate(behaviours[i]);
         foreach (var c in go.GetComponentsInChildren<Collider>(true)) DestroyImmediate(c);
+        foreach (var c in go.GetComponentsInChildren<AudioListener>(true)) DestroyImmediate(c);
+        foreach (var c in go.GetComponentsInChildren<FlareLayer>(true)) DestroyImmediate(c);   // depends on the Camera
+        foreach (var c in go.GetComponentsInChildren<Camera>(true)) DestroyImmediate(c);   // e.g. the astronaut prefab's own camera
         foreach (var r in go.GetComponentsInChildren<Renderer>(true))
         {
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -155,6 +166,14 @@ public class ModelPreview : MonoBehaviour, IBeginDragHandler, IDragHandler, IEnd
         var dir = Quaternion.Euler(elevation, 180f, 0f) * Vector3.forward;
         cam.transform.position = center - dir * dist;
         cam.transform.rotation = Quaternion.LookRotation(dir);
+
+        if (lightFollowsCamera && fill != null)
+        {
+            // above and to the left of the camera; inverse-square falloff, so scale with distance
+            fill.transform.position = cam.transform.position + cam.transform.up * dist * 0.45f - cam.transform.right * dist * 0.35f;
+            fill.range = dist * 4f;
+            fill.intensity = fillIntensity * dist * dist / 16f;
+        }
     }
 
     void LateUpdate()
