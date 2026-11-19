@@ -18,6 +18,30 @@ public class BotFactory : MonoBehaviour
     [Header("Zone")]
     public float radius = 3.8f;
 
+    [Header("Robot UPDATE (Workshop > ROBOTS tab)")]
+    [Tooltip("Seconds a robot spends at the factory to get the current level, perks, battery (and the Master Disk if it has no disk)")]
+    public float updateTime = 5f;
+
+    /// Where robots stand while being updated (the factory door).
+    public Vector3 UpdatePoint
+    {
+        get
+        {
+            Vector3 p = spawnPoint != null ? spawnPoint.position : transform.position + transform.TransformDirection(rallyOffset) * 0.6f;
+            p.y = GroundUtil.Height(p, p.y);
+            return p;
+        }
+    }
+
+    /// Robots built here that still exist (also the ones that are down / charging / away).
+    public List<ScoutBot> Robots()
+    {
+        var list = new List<ScoutBot>();
+        foreach (var b in ScoutBot.All) if (b != null && b.Factory == this) list.Add(b);
+        list.Sort((a, b) => a.Number.CompareTo(b.Number));
+        return list;
+    }
+
     [Header("Spawn / line-up")]
     public Transform spawnPoint;
     public Vector3 rallyOffset = new Vector3(0f, 0f, -5f);
@@ -152,6 +176,8 @@ public class BotFactory : MonoBehaviour
         if (bot != null)
         {
             bot.SourcePrefab = botPrefab;
+            bot.Factory = this;
+            if (Upgrades != null) bot.UpgradeRevision = Upgrades.Revision;
             bot.Init(RallyPoint(built - 1), totalBuilt);
             bot.SetBuiltCost(CostPerBot);   // snapshot for the scrap refund (DevSpawnNow bots count too)
             if (Upgrades != null) bot.ApplyStats(Upgrades.Current);   // bots keep what they were built with

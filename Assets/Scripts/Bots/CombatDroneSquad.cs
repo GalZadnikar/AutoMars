@@ -90,7 +90,14 @@ public partial class CombatDrone
 
     /// Free = has a disk (a drone without one is inactive and stays where it is), not in a squad, not down, not charging.
     static bool CanRecruit(CombatDrone d) =>
-        d != null && d.Program != null && d.leaderRef == null && !d.formationOn && !d.IsDown && !d.SeekingCharge;
+        d != null && d.Program != null && d.leaderRef == null && !d.formationOn && !d.IsDown && !d.SeekingCharge && d.CurrentOrder == Order.None;
+
+    // RECALL / UPDATE from the factory: leave or disband the squad first
+    protected override void OnOrderGiven()
+    {
+        if (formationOn) SetFormation(false);
+        if (leaderRef != null) LeaveSquad(false);
+    }
 
     void Join(CombatDrone d)
     {

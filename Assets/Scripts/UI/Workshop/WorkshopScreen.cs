@@ -96,7 +96,7 @@ public class WorkshopScreen : MonoBehaviour
         }
         levelUpButton.onClick.AddListener(LevelUp);
         equipButton.onClick.AddListener(EquipInspected);
-        if (batterySlot != null) batterySlot.onClick.AddListener(() => OpenPicker(PickerMode.Battery));
+        if (batterySlot != null) batterySlot.onClick.AddListener(() => { WorkshopRobotsTab.For(this).Show(false); OpenPicker(PickerMode.Battery); });
         if (batteryBackButton != null) batteryBackButton.onClick.AddListener(ClosePicker);
         if (batteryEquipButton != null) batteryEquipButton.onClick.AddListener(EquipPicked);
         if (batteryRemoveButton != null) batteryRemoveButton.onClick.AddListener(RemoveBattery);
@@ -153,7 +153,16 @@ public class WorkshopScreen : MonoBehaviour
         BuildDynamic();
         foreach (var fit in GetComponentsInChildren<FitToSafeArea>()) fit.Apply();   // size the preview correctly on first open
         if (preview != null) preview.Show(previewPrefab);
+        // UPGRADES | ROBOTS tabs (factories only; the player's tree has no robots)
+        WorkshopRobotsTab.For(this).Setup(upgrades.GetComponent<BotFactory>());
         Refresh();
+    }
+
+    /// Closes the battery / master-disk picker (the ROBOTS tab takes the right-hand panel).
+    public void HidePicker()
+    {
+        if (!pickerOpen) return;
+        ClosePicker();
     }
 
     public void Close()
@@ -473,6 +482,7 @@ public class WorkshopScreen : MonoBehaviour
     void OpenDiskSlot()
     {
         if (up == null) return;
+        WorkshopRobotsTab.For(this).Show(false);
         if (!up.MasterDiskUnlocked) { Toast("UNLOCKS AT FACTORY LEVEL " + up.tree.masterDiskUnlockLevel); return; }
         OpenPicker(PickerMode.Disk);
     }

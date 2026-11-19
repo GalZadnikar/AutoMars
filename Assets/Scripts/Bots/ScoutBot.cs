@@ -68,6 +68,36 @@ public class ScoutBot : MonoBehaviour
 
     public DiskProgram Program { get; private set; }
     public string BotName { get; private set; } = "Scout Bot";
+    /// Unit number (#N), unique across factories.
+    public int Number { get; private set; }
+
+    // ---------- orders from the factory (Workshop > ROBOTS tab) ----------
+    public enum Order { None, Recall, Update }
+    /// The factory that built this robot (null for robots spawned without one).
+    public BotFactory Factory { get; set; }
+    /// The factory's BuildingUpgrades.Revision this robot was built / last updated with.
+    public int UpgradeRevision { get; set; }
+    /// RECALL = walk back to its spot at the factory and wait there; UPDATE = go to the factory door and get upgraded.
+    public Order CurrentOrder { get; private set; }
+    /// Standing at the factory door getting updated right now.
+    public bool IsUpdating => CurrentOrder == Order.Update && updateArrived;
+    /// 0..1 while updating.
+    public float UpdateProgress => IsUpdating && Factory != null ? Mathf.Clamp01(updateT / Mathf.Max(0.1f, Factory.updateTime)) : 0f;
+    public float UpdateTimeLeft => IsUpdating && Factory != null ? Mathf.Max(0f, Factory.updateTime - updateT) : 0f;
+    bool updateArrived;
+    float updateT;
+
+    /// The factory has changed (level, perks, battery, master disk) since this robot was built / updated,
+    /// or it has no disk while the factory has a Master Disk.
+    public bool NeedsUpdate
+    {
+        get
+        {
+            var up = Factory != null ? Factory.Upgrades : null;
+            if (up == null) return false;
+            return UpgradeRevision != up.Revision || Level != up.Level || (Program == null && up.AutoProgram != null && up.AutoProgram.FitsOn(robotType));
+        }
+    }
     /// Tech level of the factory that built this bot (snapshot at spawn).
     public int Level { get; private set; } = 1;
 
@@ -113,6 +143,7 @@ public class ScoutBot : MonoBehaviour
     public void SetFollow(bool on)
     {
         if (Following == on) return;
+        if (on && CurrentOrder != Order.None) ClearOrder(false);
         Following = on;
         if (on) { if (!followers.Contains(this)) followers.Add(this); }
         else
@@ -201,6 +232,7 @@ public class ScoutBot : MonoBehaviour
     public void Init(Vector3 rallyPoint, int number)
     {
         HomePosition = rallyPoint;
+        Number = number;
         BotName = UnitName + " #" + number;
         spawnT = 0f;
         transform.localScale = Vector3.zero;
@@ -216,6 +248,7 @@ public class ScoutBot : MonoBehaviour
         }
         Program = program;
         ProgramFromMasterDisk = fromMasterDisk && program != null;
+        if (CurrentOrder == Order.Recall) CurrentOrder = Order.None;   // a new disk = back to work
         behaviour = program != null ? program.CreateBehaviour(this) : null;
         Status = program != null ? "Starting " + program.displayName : "Waiting for a disk";
     }
@@ -271,6 +304,7 @@ public class ScoutBot : MonoBehaviour
         }
 
         TickBrain(dt);
+        if (IsUpdating) working = true;   // work animation at the door (no battery drain, see DrainBattery)
         TickCombat(dt);
         DrainBattery(dt);
 
@@ -286,6 +320,7 @@ public class ScoutBot : MonoBehaviour
     {
         if (broken) { TickBroken(dt); return; }
         if (dead) { TickDead(dt); return; }
+        if (CurrentOrder != Order.None) { TickOrder(dt); return; }
 
         if (charging != null)
         {
@@ -409,7 +444,7 @@ public class ScoutBot : MonoBehaviour
     // energy is only used while moving or working
     void DrainBattery(float dt)
     {
-        if (dead || broken || IsCharging) return;
+        if (dead || broken || IsCharging || IsUpdating) return;
         if (moving || working) battery = Mathf.Max(0f, battery - dt);
         if (battery <= 0f) Die();
     }
@@ -499,6 +534,117 @@ public class ScoutBot : MonoBehaviour
         if (!dead && Program != null) behaviour = Program.CreateBehaviour(this);
         Status = dead ? "Out of power" : "Repaired";
         labelInit = false;
+    }
+
+    // ---------- orders: RECALL / UPDATE ----------
+
+    /// RECALL: stop working and wait at its spot by the factory (RESUME = ClearOrder). False if down / no factory.
+    public bool Recall()
+    {
+        if (IsDown || Factory == null) return false;
+        StartOrder(Order.Recall);
+        return true;
+    }
+
+    /// UPDATE: go to the factory door, wait Factory.updateTime, then get the factory's current level / perks / battery
+    /// (and its Master Disk if this robot has no disk). False if down / no factory.
+    public bool RequestUpdate()
+    {
+        if (IsDown || Factory == null) return false;
+        StartOrder(Order.Update);
+        return true;
+    }
+
+    /// Cancels RECALL / UPDATE; the robot goes back to its program (or waits for a disk).
+    public void ClearOrder(bool restart = true)
+    {
+        CurrentOrder = Order.None;
+        updateArrived = false;
+        updateT = 0f;
+        labelInit = false;
+        if (restart) RestartProgram();
+    }
+
+    void StartOrder(Order o)
+    {
+        if (Following) { Following = false; followers.Remove(this); }
+        if (charging != null) { charging.Cancel(); charging = null; }
+        ChargingStation.LeaveAll(this);
+        OnOrderGiven();
+        CurrentOrder = o;
+        updateArrived = false;
+        updateT = 0f;
+        labelInit = false;
+    }
+
+    /// Hook for subclasses (drones leave their squad).
+    protected virtual void OnOrderGiven() { }
+
+    void TickOrder(float dt)
+    {
+        if (Factory == null) { ClearOrder(); return; }   // factory gone
+        if (CurrentOrder == Order.Recall)
+        {
+            Status = "Recalled to the " + Factory.idleText;
+            if (MoveTowards(HomePosition, 0.1f)) FaceDirection(Factory.transform.position - transform.position);
+            return;
+        }
+
+        // UPDATE
+        Vector3 door = Factory.UpdatePoint;
+        if (!updateArrived)
+        {
+            Status = "Going to the " + Factory.idleText + " for an update";
+            if (MoveTowards(door, 0.25f)) updateArrived = true;
+            return;
+        }
+        FaceDirection(Factory.transform.position - transform.position);
+        updateT += dt;
+        Status = "Updating " + Mathf.CeilToInt(UpdateTimeLeft) + "s";
+        if (updateT >= Factory.updateTime) FinishUpdate();
+    }
+
+    void FinishUpdate()
+    {
+        var up = Factory.Upgrades;
+        int oldLevel = Level;
+        string extra = "";
+        if (up != null)
+        {
+            float oldRuntime = batteryRuntime;
+            ApplyStats(up.Current);
+            if (oldRuntime > batteryRuntime) { batteryRuntime = oldRuntime; }   // an update never shrinks its battery
+            battery = batteryRuntime;   // leaves fully charged
+            UpgradeRevision = up.Revision;
+            if (Program == null && up.AutoProgram != null && up.AutoProgram.FitsOn(robotType))
+            {
+                SetProgram(up.AutoProgram, true);
+                extra = "  +" + up.AutoProgram.shortName.ToUpper() + " DISK";
+            }
+        }
+        health.HealFull();
+        CurrentOrder = Order.None;
+        updateArrived = false;
+        updateT = 0f;
+        labelInit = false;
+        RestartProgram();
+        BuildPopFX();
+        GameToast.Show(BotName.ToUpper() + " UPDATED" + (Level != oldLevel ? "  LV " + oldLevel + " > " + Level : "") + extra, new Color(0.45f, 0.95f, 1f));
+    }
+
+    void BuildPopFX()
+    {
+        spawnT = 0.35f;   // a little pop (re-uses the spawn scale animation)
+        CombatFX.Hit(transform.position + Vector3.up * 1f, Vector3.up, new Color(0.45f, 0.95f, 1f), 1.4f);
+    }
+
+    /// Label over the robot while it has an order.
+    string OrderLabel(out Color c)
+    {
+        c = new Color(0.45f, 0.95f, 1f);
+        if (CurrentOrder == Order.Recall) { c = new Color(1f, 0.78f, 0.3f); return "RECALLED"; }
+        if (CurrentOrder == Order.Update) return updateArrived ? "UPDATING " + Mathf.CeilToInt(UpdateTimeLeft) : "TO UPDATE";
+        return null;
     }
 
     [ContextMenu("Dev: battery to 20%")]
@@ -655,7 +801,7 @@ public class ScoutBot : MonoBehaviour
     {
         if (statusLabel == null) return;
         int power = broken ? 4 : dead ? 2 : IsCharging ? 1 : Following ? 3 : 0;
-        string extra = ExtraLabel(out Color extraColor);
+        string extra = OrderLabel(out Color extraColor) ?? ExtraLabel(out extraColor);
         if (labelInit && shownCarried == carried && shownProgram == Program && shownPower == power && shownExtra == extra) return;
         labelInit = true; shownCarried = carried; shownProgram = Program; shownPower = power; shownExtra = extra;
         if (power == 4)

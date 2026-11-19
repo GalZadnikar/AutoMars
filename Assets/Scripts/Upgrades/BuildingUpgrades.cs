@@ -27,6 +27,9 @@ public class BuildingUpgrades : MonoBehaviour
 
     /// Fired after a level-up or a perk change.
     public event Action OnChanged;
+    /// Goes up by one on every change (level, perk, battery, master disk). Robots remember the revision they were
+    /// built / last updated with, so the Workshop's ROBOTS tab can show which ones are out of date.
+    public int Revision { get; private set; }
 
     BotFactory factory;
     StatBlock current;
@@ -165,6 +168,7 @@ public class BuildingUpgrades : MonoBehaviour
     void Changed()
     {
         current = null;
+        Revision++;
         OnChanged?.Invoke();
     }
 
