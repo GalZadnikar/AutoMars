@@ -264,6 +264,7 @@ public class DebugMenu : MonoBehaviour
         Btn("SPAWN SHOOTER", g, () => SpawnDummy(true));
         Btn("SPAWN SCOUT", g, () => SpawnEnemy(false));
         Btn("SPAWN ENEMY DRONE", g, () => SpawnEnemy(true));
+        Btn("SPAWN LEECH", g, SpawnLeech);
         Btn("DROP 5 TRASH", g, () => { var pt = PlayerT(); if (pt != null) LooseTrash.Drop(pt.position + pt.forward * 3f, 5, 1.5f, 0f); });
         Btn("FIRE AT ENEMY", g, FireAtEnemy);
         Btn("KILL ENEMIES", g, KillEnemies, Danger);
@@ -342,6 +343,17 @@ public class DebugMenu : MonoBehaviour
 
     static readonly ShotSpec debugShot = new ShotSpec { damage = 20f, speed = 24f };
 
+    // E3: a leech hole 15 m ahead (it wakes up within 14 m, so step toward it)
+    static void SpawnLeech()
+    {
+        var p = PlayerT();
+        if (p == null) return;
+        Vector3 fwd = p.forward; fwd.y = 0f;
+        if (fwd.sqrMagnitude < 0.01f) fwd = Vector3.forward;
+        EnemyLeech.Spawn(p.position + fwd.normalized * 15f);
+        GameToast.Show("LEECH HOLE 15 m AHEAD", new Color(1f, 0.45f, 0.55f));
+    }
+
     static void FireAtEnemy()
     {
         var p = PlayerT();
@@ -373,6 +385,7 @@ public class DebugMenu : MonoBehaviour
     {
         var list = new List<Health>(Health.All(Team.Enemy));
         foreach (var h in list) if (h != null && !h.IsDead) h.Kill();
+        foreach (var l in new List<EnemyLeech>(EnemyLeech.All)) l.Kill();   // also the ones hiding in their hole
     }
 
     Transform Section(RectTransform parent, string name)

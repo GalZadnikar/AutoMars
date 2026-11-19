@@ -29,9 +29,18 @@ public class JoystickPlayerController : MonoBehaviour
         if (cameraTransform == null && Camera.main != null) cameraTransform = Camera.main.transform;
     }
 
+    /// Joystick / keys this frame, even while movement is blocked (the leech's struggle option reads it).
+    public Vector2 RawInput { get; private set; }
+
     Vector2 ReadInput()
     {
-        if (UIState.ModalOpen || UIState.BuildMode || PlayerHealth.KnockedOut) return Vector2.zero;   // popup open / build mode (joystick moves the blueprint): don't move
+        RawInput = ReadRaw();
+        if (UIState.ModalOpen || UIState.BuildMode || PlayerHealth.KnockedOut || EnemyLeech.PlayerHeld) return Vector2.zero;   // popup open / build mode (joystick moves the blueprint) / held by a leech: don't move
+        return RawInput;
+    }
+
+    Vector2 ReadRaw()
+    {
         Vector2 input = joystick != null ? joystick.Direction : Vector2.zero;
 #if ENABLE_INPUT_SYSTEM
         var kb = Keyboard.current;
@@ -49,6 +58,13 @@ public class JoystickPlayerController : MonoBehaviour
     void Update()
     {
         Vector2 input = ReadInput();
+        if (EnemyLeech.PlayerHeld)
+        {
+            // a leech holds (and moves) the player; its CharacterController is off meanwhile
+            verticalVelocity = 0f;
+            if (anim != null) anim.SetInteger(AnimationPar, 0);
+            return;
+        }
         bool moving = input.magnitude > deadZone;
 
         // Camera-relative direction on the ground plane
