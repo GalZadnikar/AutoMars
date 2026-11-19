@@ -2,7 +2,8 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 
-/// Home / recycler: takes trash from the player and turns each piece into materials.
+/// A Base: takes trash from the player and turns each piece into materials. Every Base opens the BASE popup,
+/// and Bases whose pipe circles overlap form one pipe network (see PipeTether) the player can walk around in.
 public class HomeBase : MonoBehaviour
 {
     public static readonly List<HomeBase> All = new List<HomeBase>();
@@ -18,7 +19,7 @@ public class HomeBase : MonoBehaviour
     public Transform body;          // the cube, punches when fed
     public TMP_Text label;
     public GroundRing ring;
-    public string idleText = "Recycler";
+    public string idleText = "Base";
 
     int queued;
     float timer, punch;

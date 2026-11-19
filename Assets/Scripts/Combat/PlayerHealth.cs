@@ -109,8 +109,9 @@ public class PlayerHealth : MonoBehaviour
         IsHealing = false;
         if (!Health.IsFull && Health.SinceDamaged >= healDelay)
         {
-            var home = HomeBaseForHealing();
-            if (home != null && home.InRange(transform.position))
+            bool atBase = false;   // every Base heals
+            foreach (var hb in HomeBase.All) if (hb != null && hb.InRange(transform.position)) { atBase = true; break; }
+            if (atBase)
             {
                 Health.Heal(healRate * Time.deltaTime);
                 IsHealing = true;

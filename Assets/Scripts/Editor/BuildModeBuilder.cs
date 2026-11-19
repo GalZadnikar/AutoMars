@@ -8,7 +8,7 @@ using UnityEngine.UI;
 
 /// Module 7: grid-based base construction. Registers the existing buildings on the grid,
 /// makes placeable prefabs + catalog, builds the base popup / placement UI (opened from the BASE button at the base). Safe to re-run.
-/// The Recycler / Gatherer Factory prefabs are the source of truth once the scene's Base_Home / Bot Factory are instances of them:
+/// The Base / Gatherer Factory prefabs are the source of truth once the scene's Base_Home / Bot Factory are instances of them:
 /// edit the model in the prefab (or as a prefab override and apply it); the builder only (re)creates a prefab from the scene object if none is linked.
 public static class BuildModeBuilder
 {
@@ -32,14 +32,14 @@ public static class BuildModeBuilder
 
         // 2. placeable prefabs made from them
         var chargerPrefab = PrefabFor(charger, "ChargingStation");
-        var recyclerPrefab = PrefabFor(home, "Recycler");
+        var basePrefab = PrefabFor(home, "Base");
         var factoryPrefab = PrefabFor(factory, "GathererFactory");
 
         // 3. catalog (the Drone Bay joins once builder 11 has made its definition)
         var defs = new System.Collections.Generic.List<BuildingDef>
         {
             Def("Build_ChargingStation", "Charging Station", "2 more charging pads", 40, chargerPrefab, WorkshopTheme.Cyan, "C"),
-            Def("Build_Recycler", "Recycler", "Bots drop trash here", 80, recyclerPrefab, new Color(0.40f, 0.92f, 0.50f), "R"),
+            Def("Build_Base", "Base", "Trash drop-off, extends your pipe", 80, basePrefab, new Color(0.40f, 0.92f, 0.50f), "R"),
             Def("Build_GathererFactory", "Gatherer Factory", "More Scout Bots, own upgrades", 150, factoryPrefab, WorkshopTheme.Orange, "F"),
         };
 
@@ -149,7 +149,7 @@ public static class BuildModeBuilder
         copy.name = name;
         copy.SetActive(true);
         copy.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-        // the pipe belongs to the home base only, not to every recycler
+        // the pipe component belongs to the home base only (other Bases join its network)
         var pipe = copy.GetComponent<PipeTether>(); if (pipe != null) Object.DestroyImmediate(pipe);
         var pp = copy.transform.Find("Pipe Point (Base)"); if (pp != null) Object.DestroyImmediate(pp.gameObject);
         var prefab = PrefabUtility.SaveAsPrefabAsset(copy, path);

@@ -89,6 +89,7 @@ public class BuildMode : MonoBehaviour
     bool dirty, valid;
     string reason = "";
     Vector3 ghostPos;
+    bool placingBase;   // the building being placed is a Base: show whether it links to the pipe network
     Quaternion ghostRot;
     Vector2Int footBl, footDims;
     float refreshT, recheckT;
@@ -282,6 +283,7 @@ public class BuildMode : MonoBehaviour
     {
         ClearGhost();
         current = def;
+        placingBase = def.prefab != null && def.prefab.GetComponent<HomeBase>() != null;
         rot = 0;
         lastRot = -1;
         dirty = true;
@@ -308,6 +310,8 @@ public class BuildMode : MonoBehaviour
     void ClearGhost()
     {
         current = null;
+        placingBase = false;
+        if (PipeTether.Instance != null) PipeTether.Instance.HidePlacementPreview();
         if (ghost != null) Destroy(ghost);
         ghost = null;
     }
@@ -527,7 +531,21 @@ public class BuildMode : MonoBehaviour
         pos.y = GroundLeveler.PadHeight(center, HalfSize(dims));   // the height the leveled pad will get
         ghostPos = pos;
         overlay.Show(bl, dims, states);
+        UpdateLinkPreview();
     }
+
+    // placing a Base: its pipe circle (green = links to your network, red = too far) + the network outline
+    void UpdateLinkPreview()
+    {
+        var pt = PipeTether.Instance;
+        if (pt == null) return;
+        if (!placingBase || !pt.Active) { pt.HidePlacementPreview(); return; }
+        bool linked = pt.WouldLink(ghostPos);
+        pt.ShowPlacementPreview(ghostPos, linked);
+        hintText.text = linked ? "<color=#8BE07A>Pipe circles touch: you can walk to this Base</color>"
+                               : "<color=#FF9A40>Too far: the pipe can't reach this Base yet (build closer or level up)</color>";
+    }
+
 
     static Vector2 HalfSize(Vector2Int dims) => new Vector2(dims.x, dims.y) * BuildGrid.CellSize * 0.5f;
 

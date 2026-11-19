@@ -63,6 +63,9 @@ public class Minimap : MonoBehaviour
     RectTransform viewport, content, playerIcon, levelBorder;
     RawImage fogOverlay;
     RectTransform rangeRing, rangeFill;
+    // one ring + fill per base of the pipe network ([0] = rangeRing / rangeFill)
+    readonly System.Collections.Generic.List<RectTransform> netRings = new System.Collections.Generic.List<RectTransform>();
+    readonly System.Collections.Generic.List<RectTransform> netFills = new System.Collections.Generic.List<RectTransform>();
     Transform player;
     readonly Dictionary<Component, Marker> markers = new Dictionary<Component, Marker>();
     readonly List<Component> toRemove = new List<Component>();
@@ -281,13 +284,32 @@ public class Minimap : MonoBehaviour
             var pt = PipeTether.Instance;
             bool on = pt != null && pt.Active;
             if (rangeRing.gameObject.activeSelf != on) { rangeRing.gameObject.SetActive(on); rangeFill.gameObject.SetActive(on); }
+            int used = 0;
             if (on)
             {
-                Vector2 c = WorldToMap(pt.transform.position);
                 Vector2 size = Vector2.one * pt.Range * 2f * Scale;
-                rangeRing.anchoredPosition = rangeFill.anchoredPosition = c;
-                rangeRing.sizeDelta = rangeFill.sizeDelta = size;
+                foreach (var node in pt.Network)
+                {
+                    if (node == null) continue;
+                    if (netRings.Count == 0) { netRings.Add(rangeRing); netFills.Add(rangeFill); }
+                    if (used >= netRings.Count)
+                    {
+                        var f = Instantiate(rangeFill.gameObject, rangeFill.parent).GetComponent<RectTransform>();
+                        f.SetSiblingIndex(rangeFill.GetSiblingIndex() + 1);   // fills under the rings
+                        var r = Instantiate(rangeRing.gameObject, rangeRing.parent).GetComponent<RectTransform>();
+                        r.SetSiblingIndex(rangeRing.GetSiblingIndex() + 1);
+                        netFills.Add(f); netRings.Add(r);
+                    }
+                    var ring = netRings[used]; var fill = netFills[used];
+                    if (!ring.gameObject.activeSelf) { ring.gameObject.SetActive(true); fill.gameObject.SetActive(true); }
+                    Vector2 c = WorldToMap(node.position);
+                    ring.anchoredPosition = fill.anchoredPosition = c;
+                    ring.sizeDelta = fill.sizeDelta = size;
+                    used++;
+                }
             }
+            for (int i = Mathf.Max(1, used); i < netRings.Count; i++)
+                if (netRings[i].gameObject.activeSelf) { netRings[i].gameObject.SetActive(false); netFills[i].gameObject.SetActive(false); }
         }
 
         if (levelBorder != null)

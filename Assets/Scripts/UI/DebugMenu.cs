@@ -282,7 +282,7 @@ public class DebugMenu : MonoBehaviour
         var g = Section(p, "TELEPORT");
         Btn("TP FACTORY", g, () => Teleport(Fac() != null ? Fac().transform : null, -4f));
         Btn("TP CHARGER", g, () => Teleport(ChargingStation.All.Count > 0 ? ChargingStation.All[0].transform : null, 4f));
-        Btn("TP RECYCLER", g, () => Teleport(HomeBase.All.Count > 0 ? HomeBase.All[0].transform : null, -4.5f));
+        Btn("TP BASE", g, () => Teleport(HomeBase.All.Count > 0 ? HomeBase.All[0].transform : null, -4.5f));
 
         g = Section(p, "TOGGLES");
         speedLabel = Btn("SPEED x1", g, CycleSpeed).GetComponentInChildren<TMP_Text>();

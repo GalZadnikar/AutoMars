@@ -28,6 +28,7 @@ public class PlayerInteractions : MonoBehaviour
     int upgradeAlert = -1;
     WorldButton baseButton;
     bool baseShown;
+    HomeBase shownBase;
 
     [Header("Trade Post (opens the shop popup)")]
     public Vector3 tradeButtonOffset = new Vector3(0f, 6.2f, 0f);
@@ -98,6 +99,7 @@ public class PlayerInteractions : MonoBehaviour
         if (upgradeButton != null) upgradeButton.Hide();
         if (baseButton != null) baseButton.Hide();
         baseShown = false;
+        shownBase = null;
         if (tradeButton != null) tradeButton.Hide();
         if (shownTrade != null) shownTrade.SetHighlight(false);
         shownTrade = null;
@@ -128,29 +130,36 @@ public class PlayerInteractions : MonoBehaviour
 
     // ------------------------------------------------------------------ BASE button
 
-    // the home base = the one with the pipe (the hand-placed drill); built recyclers have no BASE button
-    HomeBase MainBase()
+    // BASE button at any Base (the home base and every one you build): same popup everywhere
+    // every Base gets the BASE button: the nearest one whose zone the player is standing in
+    HomeBase BaseInRange()
     {
-        var pt = PipeTether.Instance;
-        var hb = pt != null ? pt.GetComponent<HomeBase>() : null;
-        if (hb == null && HomeBase.All.Count > 0) hb = HomeBase.All[0];
-        return hb;
+        HomeBase best = null;
+        float bestD = float.MaxValue;
+        foreach (var h in HomeBase.All)
+        {
+            if (h == null || !h.InRange(transform.position)) continue;
+            float d = (h.transform.position - transform.position).sqrMagnitude;
+            if (d < bestD) { bestD = d; best = h; }
+        }
+        return best;
     }
 
     void UpdateBaseButton()
     {
-        var hb = MainBase();
-        bool inRange = hb != null && hb.InRange(transform.position);
-        if (!inRange)
+        var hb = BaseInRange();
+        if (hb == null)
         {
             if (baseShown && baseButton != null) baseButton.Hide();
             baseShown = false;
+            shownBase = null;
             return;
         }
         if (baseButton == null) MakeBaseButton();
         if (baseButton == null) return;
-        if (baseShown) return;
+        if (baseShown && hb == shownBase) return;
         baseShown = true;
+        shownBase = hb;
         baseButton.Show(hb.transform, baseButtonOffset, OpenBase);
     }
 
