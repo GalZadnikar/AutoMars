@@ -262,6 +262,9 @@ public class DebugMenu : MonoBehaviour
         var g = Section(p, "ENEMIES");
         Btn("SPAWN DUMMY", g, () => SpawnDummy(false));
         Btn("SPAWN SHOOTER", g, () => SpawnDummy(true));
+        Btn("SPAWN SCOUT", g, () => SpawnEnemy(false));
+        Btn("SPAWN ENEMY DRONE", g, () => SpawnEnemy(true));
+        Btn("DROP 5 TRASH", g, () => { var pt = PlayerT(); if (pt != null) LooseTrash.Drop(pt.position + pt.forward * 3f, 5, 1.5f, 0f); });
         Btn("FIRE AT ENEMY", g, FireAtEnemy);
         Btn("KILL ENEMIES", g, KillEnemies, Danger);
 
@@ -322,6 +325,19 @@ public class DebugMenu : MonoBehaviour
         var d = TargetDummy.Spawn(p.position + fwd.normalized * (shooter ? 9f : 5f), shooter);
         d.transform.rotation = Quaternion.LookRotation(-fwd);
         GameToast.Show(shooter ? "SHOOTER DUMMY SPAWNED" : "DUMMY SPAWNED", new Color(1f, 0.6f, 0.25f));
+    }
+
+    static void SpawnEnemy(bool drone)
+    {
+        var p = PlayerT();
+        if (p == null) return;
+        Vector3 fwd = p.forward; fwd.y = 0f;
+        if (fwd.sqrMagnitude < 0.01f) fwd = Vector3.forward;
+        Vector3 pos = p.position + fwd.normalized * (drone ? 15f : 12f);
+        // like the dummy: stands where it is spawned (no patrol, not hidden by fog) and attacks when something comes in range
+        if (drone) { var d = EnemyDrone.Spawn(pos, pos); d.homeRadius = 0f; d.hideInFog = false; }
+        else EnemyScout.Spawn(pos);
+        GameToast.Show(drone ? "ENEMY DRONE SPAWNED" : "ENEMY SCOUT SPAWNED", new Color(1f, 0.4f, 0.3f));
     }
 
     static readonly ShotSpec debugShot = new ShotSpec { damage = 20f, speed = 24f };

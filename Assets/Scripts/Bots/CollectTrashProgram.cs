@@ -10,10 +10,11 @@ public class CollectTrashProgram : DiskProgram
 /// Materials from the base go to the player like normal.
 public class CollectTrashBehaviour : BotBehaviour
 {
-    enum State { FindPile, ToPile, Picking, ToHome, Unloading, NoTrash }
+    enum State { FindPile, ToPile, Picking, ToLoose, ToHome, Unloading, NoTrash }
 
     State state;
     TrashPile pile;
+    LooseTrash loose;
     HomeBase home;
     Vector3 spot;
     float timer, retry;
@@ -29,6 +30,12 @@ public class CollectTrashBehaviour : BotBehaviour
         {
             case State.FindPile:
                 pile = NearestPile();
+                loose = LooseTrash.Nearest(bot.transform.position);
+                if (loose != null && (pile == null || Flat(loose.transform.position) <= Flat(pile.transform.position)))
+                {
+                    state = State.ToLoose;
+                    break;
+                }
                 if (pile == null)
                 {
                     if (bot.Carried > 0) GoHome(); else state = State.NoTrash;
@@ -58,6 +65,21 @@ public class CollectTrashBehaviour : BotBehaviour
                 }
                 break;
 
+            case State.ToLoose:
+                bot.Status = "Picking up loose trash";
+                if (loose == null || bot.IsFull) { if (bot.IsFull) GoHome(); else state = State.FindPile; break; }
+                if (bot.MoveTowards(loose.transform.position, 0.5f))
+                {
+                    bot.MarkWorking();
+                    if (loose.Available)
+                    {
+                        bot.TryPickLoose(loose);
+                        loose = null;
+                        if (bot.IsFull) GoHome(); else state = State.FindPile;
+                    }
+                }
+                break;
+
             case State.ToHome:
                 bot.Status = "Bringing trash to base";
                 if (home == null) { GoHome(); break; }
@@ -81,7 +103,7 @@ public class CollectTrashBehaviour : BotBehaviour
                 if (retry <= 0f)
                 {
                     retry = 2f;
-                    if (NearestPile() != null) state = State.FindPile;
+                    if (NearestPile() != null || LooseTrash.Nearest(bot.transform.position) != null) state = State.FindPile;
                 }
                 break;
         }
@@ -99,6 +121,12 @@ public class CollectTrashBehaviour : BotBehaviour
         if (home == null) { state = State.NoTrash; return; }
         spot = SpotNear(home.transform.position, home.radius * 0.6f);
         state = State.ToHome;
+    }
+
+    float Flat(Vector3 p)
+    {
+        Vector3 d = p - bot.transform.position; d.y = 0f;
+        return d.sqrMagnitude;
     }
 
     TrashPile NearestPile()

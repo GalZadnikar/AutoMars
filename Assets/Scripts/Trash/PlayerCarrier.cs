@@ -91,6 +91,12 @@ public class PlayerCarrier : MonoBehaviour
         {
             if (home != null && stack.Count > 0) { Deposit(home); timer = depositInterval; }
             else if (pile != null && !IsFull && pile.TryTake(out var from)) { Pickup(from); timer = pickupInterval; }
+            else if (home == null && !IsFull && !PlayerHealth.KnockedOut)
+            {
+                // loose trash on the ground (E1): walk over it
+                var loose = LooseTrash.Nearest(transform.position, 1.6f);
+                if (loose != null && loose.InRange(transform.position) && loose.TryTake(out var lf)) { Pickup(lf); timer = pickupInterval; }
+            }
         }
 
         UpdateFlights(dt);
@@ -120,7 +126,7 @@ public class PlayerCarrier : MonoBehaviour
         carried--;
     }
 
-    /// Drops the whole trash bag (player knocked out). Lost for now; becomes loose trash once E1 exists.
+    /// Drops the whole trash bag (player knocked out): it lands around the player as loose trash (E1).
     /// Returns how many items were dropped.
     public int DropAll()
     {
@@ -130,6 +136,7 @@ public class PlayerCarrier : MonoBehaviour
         foreach (var t in stack) if (t != null) Release(t);
         stack.Clear();
         carried = 0;
+        LooseTrash.Drop(transform.position, n, 2.2f, 2f);
         PileClearFX.Play(transform.position, 1.5f);
         UpdateLabel();
         return n;

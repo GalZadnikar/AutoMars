@@ -224,15 +224,17 @@ public class ScoutBot : MonoBehaviour
     public void SetBuiltCost(int cost) { BuiltCost = Mathf.Max(0, cost); }
 
     /// Scraps the bot: refunds 50 % of its build cost, drops a player-inserted disk at its feet
-    /// (a Master Disk program drops nothing), carried trash is lost for now (loose trash comes with E1).
+    /// (a Master Disk program drops nothing), carried trash drops as loose trash (E1).
     /// Returns the refund.
     public int Scrap()
     {
         int refund = ScrapRefund;
         if (Economy.Instance != null && refund > 0) Economy.Instance.AddMaterials(refund);
         if (Program != null && !ProgramFromMasterDisk) DiskPickup.Drop(Program, transform.position);
-        foreach (var t in stack) if (t != null) Destroy(t.gameObject);   // carried trash is lost (E1: drop as loose trash)
+        int carriedItems = stack.Count;
+        foreach (var t in stack) if (t != null) Destroy(t.gameObject);
         stack.Clear();
+        if (carriedItems > 0) LooseTrash.Drop(transform.position, carriedItems, 1.5f, 1f);   // carried trash drops on the ground (E1)
         foreach (var t in pool) if (t != null) Destroy(t.gameObject);
         pool.Clear();
         flights.Clear();
@@ -558,6 +560,19 @@ public class ScoutBot : MonoBehaviour
     {
         if (IsFull || pile == null) return false;
         if (!pile.TryTake(out var from)) return false;
+        var item = Get();
+        item.SetParent(null, false);
+        item.position = from;
+        int slot = stack.Count;
+        stack.Add(item);
+        flights.Add(new Flight { item = item, from = from, slot = slot });
+        carried++;
+        return true;
+    }
+
+    public bool TryPickLoose(LooseTrash loose)
+    {
+        if (IsFull || loose == null || !loose.TryTake(out var from)) return false;
         var item = Get();
         item.SetParent(null, false);
         item.position = from;

@@ -49,7 +49,7 @@ public class Minimap : MonoBehaviour
     public float diskSize = 18f;
     public float botSize = 14f;
 
-    enum Kind { Home, Factory, Trash, Disk, Bot, Charger, Battery }
+    enum Kind { Home, Factory, Trash, Disk, Bot, Charger, Battery, Enemy }
 
     class Marker
     {
@@ -149,6 +149,7 @@ public class Minimap : MonoBehaviour
                 break;
             case Kind.Trash: sprite = sCircle; color = trashColor; size = trashSize; break;
             case Kind.Disk: sprite = sDiamond; color = diskColor; size = diskSize; break;
+            case Kind.Enemy: sprite = sCircle; color = new Color(1f, 0.2f, 0.18f); size = botSize; break;
             default: sprite = sCircle; color = botColor; size = botSize; break;
         }
 
@@ -188,6 +189,8 @@ public class Minimap : MonoBehaviour
         foreach (var p in TrashPile.All) Ensure(Kind.Trash, p);
         foreach (var b in ScoutBot.All) Ensure(Kind.Bot, b);
         foreach (var c in ChargingStation.All) Ensure(Kind.Charger, c);
+        foreach (var e in EnemyScout.All) Ensure(Kind.Enemy, e);
+        foreach (var e in EnemyDrone.All) Ensure(Kind.Enemy, e);
         foreach (var bp in FindObjectsByType<BatteryPickup>(FindObjectsSortMode.None)) Ensure(Kind.Battery, bp);
     }
 
@@ -228,6 +231,9 @@ public class Minimap : MonoBehaviour
                 var bot = (ScoutBot)m.source;
                 m.image.color = bot.IsDown ? deadBotColor : bot.Program != null ? bot.Program.color : botColor;
             }
+
+            if (m.kind == Kind.Enemy && FogOfWar.Instance != null)
+                visible &= FogOfWar.Instance.IsVisible(m.source.transform.position);   // red dot only while in sight
 
             if (showFogOfWar && (m.kind == Kind.Trash || m.kind == Kind.Disk || m.kind == Kind.Battery) && FogOfWar.Instance != null)
                 visible &= FogOfWar.Instance.IsExplored(m.source.transform.position);
