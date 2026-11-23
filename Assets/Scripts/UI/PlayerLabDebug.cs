@@ -131,6 +131,8 @@ public class PlayerLabDebug : MonoBehaviour
         Stat(p, "combo", "COMBO TIME (s)", () => melee.comboTime, v => melee.comboTime = v, 0.02f, 0.2f, 0.62f, "0.00");
         Stat(p, "hitStop", "HIT-STOP (s)", () => melee.hitStop, v => melee.hitStop = v, 0.01f, 0f, 0.3f, "0.00");
         Stat(p, "killStop", "KILL HIT-STOP (s)", () => melee.killHitStop, v => melee.killHitStop = v, 0.02f, 0f, 0.5f, "0.00");
+        Stat(p, "areaArc", "AREA HIT ARC (deg, 0 = single)", () => melee.hitAllInReach ? melee.areaArc : 0f, v => { melee.hitAllInReach = v > 0f; if (v > 0f) melee.areaArc = v; }, 30f, 0f, 360f, "0");
+        Stat(p, "areaExtra", "AREA EXTRA REACH", () => melee.areaExtraRange, v => melee.areaExtraRange = v, 0.1f, 0f, 2f, "0.0");
 
         Header(p, "TARGET (ALL ROCKS)");
         Stat(p, "targetHP", "HP", () => FromTarget(t => t.HP.maxHP, 24f), v => EachTarget(t => t.HP.SetMax(v)), 6f, 6f, 600f, "0");

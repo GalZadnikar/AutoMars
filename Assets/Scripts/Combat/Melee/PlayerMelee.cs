@@ -28,6 +28,14 @@ public class PlayerMelee : MonoBehaviour
     [Tooltip("Swings only start when facing the target within this angle")]
     public float faceAngle = 50f;
 
+    [Header("Area hit")]
+    [Tooltip("One swing damages every target in reach, not only the one the player faces")]
+    public bool hitAllInReach = true;
+    [Tooltip("Extra reach for the other targets, on top of Range")]
+    public float areaExtraRange = 0.4f;
+    [Tooltip("Width of the area in degrees, centred on where the player faces (360 = all around)")]
+    [Range(0f, 360f)] public float areaArc = 360f;
+
     [Header("Hit feel")]
     [Tooltip("Seconds the swing freezes on contact")]
     public float hitStop = 0.05f;
@@ -147,21 +155,48 @@ public class PlayerMelee : MonoBehaviour
     // ------------------------------------------------------------------ animation events (on the swing clips)
 
     /// Contact frame of a swing.
-    public void MeleeHit()
+public void MeleeHit()
     {
         if (!enabled) return;   // the shovel uses the same clips
         if (target == null || !target.Alive) return;
         if (EdgeDistance(target) > range + 0.6f) return;
-        Vector3 from = weaponTip != null ? weaponTip.position : transform.position + Vector3.up * 1.2f + transform.forward * 0.8f;
-        Vector3 dir = target.transform.position - transform.position; dir.y = 0f;
-        dir = dir.sqrMagnitude > 0.0001f ? dir.normalized : transform.forward;
-        bool killed = target.TakeHit(damage, target.HitPoint(from), dir, gameObject);
+        Vector3 tip = weaponTip != null ? weaponTip.position : transform.position + Vector3.up * 1.2f + transform.forward * 0.8f;
+        bool killed = HitOne(target, tip);
+
+        if (hitAllInReach)
+        {
+            // everything else standing in reach takes the same blow (backwards: a broken target may leave the list)
+            Vector3 chest = transform.position + Vector3.up * 1f;
+            var all = MeleeTarget.All;
+            for (int i = all.Count - 1; i >= 0; i--)
+            {
+                if (i >= all.Count) continue;
+                var t = all[i];
+                if (t == null || t == target || !t.Alive) continue;
+                if (EdgeDistance(t) > range + areaExtraRange) continue;
+                if (areaArc < 360f)
+                {
+                    Vector3 to = t.transform.position - transform.position; to.y = 0f;
+                    if (to.sqrMagnitude > 0.0001f && Vector3.Angle(transform.forward, to) > areaArc * 0.5f) continue;
+                }
+                killed |= HitOne(t, chest);
+            }
+        }
+
+        // one freeze per swing, however many things it hit
         float stop = killed ? killHitStop : hitStop;
         if (stop > 0f)
         {
             anim.speed = 0f;
             stopT = stop;
         }
+    }
+
+    bool HitOne(MeleeTarget t, Vector3 from)
+    {
+        Vector3 dir = t.transform.position - transform.position; dir.y = 0f;
+        dir = dir.sqrMagnitude > 0.0001f ? dir.normalized : transform.forward;
+        return t.TakeHit(damage, t.HitPoint(from), dir, gameObject);
     }
 
     /// 1 at the start of the fast part of a swing, 0 after the follow-through.
