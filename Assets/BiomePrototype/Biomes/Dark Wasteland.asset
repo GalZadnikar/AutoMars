@@ -15,3 +15,6 @@ MonoBehaviour:
   groundA: {r: 0.3, g: 0.22, b: 0.21, a: 1}
   groundB: {r: 0.25, g: 0.185, b: 0.18, a: 1}
   rock: {r: 0.17, g: 0.13, b: 0.12, a: 1}
+  hueShift: 0
+  saturation: 1
+  brightness: 1

@@ -19,6 +19,8 @@ public class JoystickPlayerController : MonoBehaviour
 
     /// Multiplies moveSpeed; other systems set it (e.g. the suction gun slows you while sucking). 1 = normal.
     [System.NonSerialized] public float speedMultiplier = 1f;
+    /// Set from code to steer the player without a joystick (automated tests). Zero = off.
+    [System.NonSerialized] public Vector2 scriptedInput;
 
     CharacterController controller;
     Animator anim;
@@ -45,6 +47,7 @@ public class JoystickPlayerController : MonoBehaviour
     Vector2 ReadRaw()
     {
         Vector2 input = joystick != null ? joystick.Direction : Vector2.zero;
+        if (scriptedInput.sqrMagnitude > 0.0001f) input = scriptedInput;
 #if ENABLE_INPUT_SYSTEM
         var kb = Keyboard.current;
         if (input.sqrMagnitude < 0.0001f && kb != null)

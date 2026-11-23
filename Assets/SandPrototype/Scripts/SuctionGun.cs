@@ -17,6 +17,8 @@ public class SuctionGun : MonoBehaviour
     [Tooltip("How fast sand disappears at the nozzle (1 = one full grid point per second)")]
     public float suckRate = 1.8f;
     public int capacity = 60;
+    [Tooltip("Testing: the tank never fills up (sucked sand still counts, and pays out at the base)")]
+    public bool unlimitedCapacity;
     [Tooltip("Tank units per cubic metre of sand")]
     public float unitsPerCubicMetre = 1f;
     [Tooltip("Units per second emptied at the home base")]
@@ -27,6 +29,17 @@ public class SuctionGun : MonoBehaviour
     [Tooltip("Walking speed while sucking (0.6 = 60% of normal). Eases in and out with the suction.")]
     [Range(0.1f, 1f)] public float suckMoveSpeed = 0.6f;
 
+    [Header("Walking into sand")]
+    [Tooltip("Reach of the short, wide suction right in front of the feet (m). It clears the path as wide as the player.")]
+    public float mouthRange = 1.6f;
+    [Range(20f, 120f)] public float mouthHalfAngle = 75f;
+    [Tooltip("How much stronger the mouth is than the long cone. Higher = you walk through sand faster. Good upgrade stat.")]
+    public float mouthPower = 2.5f;
+    [Tooltip("Sand right ahead slows the player smoothly, so he walks in at the pace the gun clears it")]
+    public bool sandSlowsWalking = true;
+    [Tooltip("Walking speed against deep sand (share of normal speed)")]
+    [Range(0.05f, 1f)] public float minSandSpeed = 0.15f;
+
     [Header("Auto-aim (joystick released)")]
     [Tooltip("When the joystick is let go, the player slowly turns towards the most sand in range")]
     public bool autoAim = true;
@@ -34,6 +47,10 @@ public class SuctionGun : MonoBehaviour
     public float autoAimDelay = 0.25f;
     [Tooltip("Turn speed while auto-aiming (degrees per second)")]
     public float autoAimTurnSpeed = 220f;
+    [Tooltip("Seconds the turn takes to ease in and out (0 = constant speed)")]
+    public float autoAimSmoothTime = 0.2f;
+    [Tooltip("How much less sand behind the player counts than sand in front (0 = all directions equal)")]
+    [Range(0f, 0.9f)] public float autoAimFrontBias = 0.45f;
     [Tooltip("A new direction must have this much more sand (0.2 = 20%) before it switches to it - stops wobbling between two piles")]
     [Range(0f, 1f)] public float autoAimStickiness = 0.2f;
     [Tooltip("Ignore directions with less sand than this (about square metres of full sand in the cone)")]
@@ -43,6 +60,7 @@ public class SuctionGun : MonoBehaviour
 
     [Header("Look")]
     public Vector3 gunLocalPos = new Vector3(0.4f, 1.25f, 0.5f);
+    public float gunScale = 1.5f;
     public Material particleMaterial;
     public Material swirlMaterial;
     public Color sandColor = new Color(1f, 0.83f, 0.42f);
@@ -55,11 +73,15 @@ public class SuctionGun : MonoBehaviour
     /// Fired with the amount each time materials are paid out.
     public event System.Action<int> PaidOut;
     float payout;
-    public bool IsFull => Stored >= capacity - 0.001f;
+    public bool IsFull => !unlimitedCapacity && Stored >= capacity - 0.001f;
     public bool Sucking { get; private set; }
     public bool Unloading { get; private set; }
     /// True while auto-aim is turning / holding the player towards sand.
     public bool AutoAiming { get; private set; }
+    /// Put away (another tool is in the hands): hidden, no suction, no auto-aim.
+    public bool Holstered { get; set; }
+    /// The gun model (null outside Play mode).
+    public Transform GunTransform => gun;
 
     JoystickPlayerController pc;
     const int AimBins = 72;   // 5 degrees each
@@ -101,6 +123,7 @@ public class SuctionGun : MonoBehaviour
         if (player == null || gun == null) return;
         float dt = Time.deltaTime;
         Vector3 pos = player.position;
+        if (gun.gameObject.activeSelf == Holstered) gun.gameObject.SetActive(!Holstered);
         UpdateAutoAim(dt, pos);   // before reading forward, so the gun sucks where we just turned
         Vector3 fwd = player.forward; fwd.y = 0f;
         if (fwd.sqrMagnitude < 1e-4f) fwd = Vector3.forward;
@@ -112,32 +135,69 @@ public class SuctionGun : MonoBehaviour
             foreach (var h in HomeBase.All)
                 if (h != null && h.InRange(pos)) { Unload(dt); Unloading = true; break; }
 
-        // suck
+        // suck: the long cone, plus a short wide 'mouth' at the feet that keeps the path as wide as the player
         Sucking = false;
-        if (!IsFull && !Unloading && !PlayerHealth.KnockedOut)
+        if (!Holstered && !IsFull && !Unloading && !PlayerHealth.KnockedOut)
         {
             float vol = 0f, mats = 0f;
             Vector3 from = pos + fwd * 0.2f;
+            Vector3 mouth = pos - fwd * MouthBack;
             for (int i = 0; i < SandField.All.Count; i++)
             {
-                vol += SandField.All[i].Suck(from, fwd, range, halfAngle, suckRate, dt, out float m);
+                var f = SandField.All[i];
+                vol += f.Suck(from, fwd, range, halfAngle, suckRate, dt, out float m);
                 mats += m;
+                if (mouthPower > 0f && mouthRange > 0f)
+                {
+                    vol += f.Suck(mouth, fwd, mouthRange + MouthBack, mouthHalfAngle, suckRate * mouthPower, dt, out m);
+                    mats += m;
+                }
             }
             if (vol > 0f)
             {
                 Sucking = true;
                 float units = vol * unitsPerCubicMetre;
-                float add = Mathf.Min(units, capacity - Stored);
+                float add = unlimitedCapacity ? units : Mathf.Min(units, capacity - Stored);
                 Stored += add;
                 StoredMaterials += mats;   // full value, also for the auto-cleared rest of a field
             }
         }
 
-        blend = Mathf.MoveTowards(blend, Sucking ? 1f : 0f, dt * (Sucking ? 6f : 3f));
-        if (pc != null) pc.speedMultiplier = Mathf.Lerp(1f, suckMoveSpeed, blend);   // slower while sucking
+        blend = Mathf.MoveTowards(blend, Sucking ? 1f : 0f, dt * (Sucking ? 10f : 3f));
+
+        // walking speed: a bit slower while sucking, and sand right ahead slows the player smoothly, so he glides
+        // into it at the pace the gun clears it (instead of running into a wall and stopping dead)
+        float want = Mathf.Lerp(1f, suckMoveSpeed, blend);
+        if (sandSlowsWalking) want *= SandResistance(pos, fwd);
+        moveMul = Mathf.MoveTowards(moveMul, want, dt * (want < moveMul ? 14f : 5f));
+        if (pc != null) pc.speedMultiplier = moveMul;
         UpdateFX(dt, pos, fwd);
     }
 
+    const float MouthBack = 0.35f;   // the mouth cone starts a little behind the player, so it also covers beside the feet
+    float moveMul = 1f, aimYawVel;
+
+    /// 1 = free, minSandSpeed = deep sand right in front of the feet.
+    float SandResistance(Vector3 pos, Vector3 fwd)
+    {
+        float a = 0f;
+        for (int k = -1; k <= 1; k++)
+        {
+            Vector3 d = Quaternion.Euler(0f, k * 35f, 0f) * fwd;
+            a = Mathf.Max(a, SandAt(pos + d * 0.7f));
+            a = Mathf.Max(a, SandAt(pos + d * 1.0f) * 0.7f);
+        }
+        return Mathf.Lerp(1f, minSandSpeed, Mathf.InverseLerp(0.08f, 0.45f, a));
+    }
+
+    static float SandAt(Vector3 p)
+    {
+        float a = 0f;
+        for (int i = 0; i < SandField.All.Count; i++) a = Mathf.Max(a, SandField.All[i].AmountAt(p));
+        return a;
+    }
+
+    
     // ------------------------------------------------------------------ auto-aim
 
     /// Joystick let go: turn smoothly towards the direction with the most sand in range.
@@ -146,12 +206,14 @@ public class SuctionGun : MonoBehaviour
     {
         AutoAiming = false;
         bool steering = pc != null && pc.RawInput.magnitude > pc.deadZone;
-        bool blocked = UIState.ModalOpen || UIState.BuildMode || PlayerHealth.KnockedOut || EnemyLeech.PlayerHeld;
-        if (!autoAim || steering || blocked || IsFull || Unloading)   // Unloading = last frame's value
+        bool blocked = UIState.ModalOpen || UIState.BuildMode || PlayerHealth.KnockedOut || EnemyLeech.PlayerHeld
+                       || PlayerMelee.Engaged;   // swinging at a melee target: that turns the player, not the sand
+        if (!autoAim || Holstered || steering || blocked || IsFull || Unloading)   // Unloading = last frame's value
         {
             idleTime = 0f;
             rescanT = 0f;
             aimHasTarget = false;
+            aimYawVel = 0f;
             return;
         }
         idleTime += dt;
@@ -168,12 +230,12 @@ public class SuctionGun : MonoBehaviour
             for (int b = 0; b < AimBins; b++)
             {
                 float yaw = (b + 0.5f) * 360f / AimBins;
-                float s = AimScore(yaw);
+                float s = AimScore(yaw) * FrontBias(yaw);
                 if (s > best) { best = s; bestYaw = yaw; }
             }
             // keep the current direction (or the way we already face) unless the best one is clearly better
             float curYaw = aimHasTarget ? aimYaw : player.eulerAngles.y;
-            float current = AimScore(curYaw);
+            float current = AimScore(curYaw) * FrontBias(curYaw);
             if (best < autoAimMinSand) aimHasTarget = false;
             else if (current >= autoAimMinSand && best <= current * (1f + autoAimStickiness)) { aimYaw = curYaw; aimHasTarget = true; }
             else { aimYaw = bestYaw; aimHasTarget = true; }
@@ -181,7 +243,16 @@ public class SuctionGun : MonoBehaviour
         if (!aimHasTarget) return;
 
         AutoAiming = true;
-        player.rotation = Quaternion.RotateTowards(player.rotation, Quaternion.Euler(0f, aimYaw, 0f), autoAimTurnSpeed * dt);
+        // eases into and out of the turn (a constant-speed turn looks robotic)
+        float newYaw = Mathf.SmoothDampAngle(player.eulerAngles.y, aimYaw, ref aimYawVel, autoAimSmoothTime, autoAimTurnSpeed, dt);
+        player.rotation = Quaternion.Euler(0f, newYaw, 0f);
+    }
+
+    /// Sand in front counts fully, sand behind less: letting go of the joystick shouldn't spin the player around.
+    float FrontBias(float yaw)
+    {
+        float off = Mathf.Abs(Mathf.DeltaAngle(player.eulerAngles.y, yaw)) / 180f;
+        return Mathf.Lerp(1f, 1f - autoAimFrontBias, off);
     }
 
     /// Sand in the gun's cone if it pointed at this yaw (centre of the cone counts most, like Suck).
@@ -286,6 +357,7 @@ public class SuctionGun : MonoBehaviour
         owned.Add(gun.gameObject);
         gun.SetParent(player, false);
         gun.localPosition = gunLocalPos;
+        gun.localScale = Vector3.one * gunScale;
 
         var red = LitMat(new Color(0.85f, 0.2f, 0.18f));
         var purple = LitMat(new Color(0.55f, 0.45f, 0.95f));

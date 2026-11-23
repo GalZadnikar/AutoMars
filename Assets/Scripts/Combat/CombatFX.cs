@@ -180,6 +180,129 @@ public static class CombatFX
         return ps;
     }
 
+    /// Melee impact: a bright star flash, fast streaks and a few chips where a hand weapon lands.
+    /// normal = direction the sparks fly (back toward the attacker). color = the chips (colour of what was hit).
+    public static void MeleeHit(Vector3 pos, Vector3 normal, Color color, float size = 1f)
+    {
+        var root = Root("Melee Hit FX", pos, normal);
+        var flash = System(root, "Flash", 0.2f);
+        {
+            var m = flash.main;
+            m.startLifetime = 0.09f;
+            m.startSpeed = 0f;
+            m.startSize = 1.3f * size;
+            m.startColor = new Color(1f, 0.98f, 0.9f, 0.95f);
+            Burst(flash, 0f, 1);
+            var sol = flash.sizeOverLifetime; sol.enabled = true;
+            sol.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0f, 1f), new Keyframe(1f, 0.25f)));
+        }
+        var star = System(root, "Star", 0.2f);
+        {
+            var m = star.main;
+            m.startLifetime = new ParticleSystem.MinMaxCurve(0.06f, 0.11f);
+            m.startSpeed = new ParticleSystem.MinMaxCurve(9f * size, 17f * size);
+            m.startSize = new ParticleSystem.MinMaxCurve(0.07f, 0.13f);
+            m.startColor = new ParticleSystem.MinMaxGradient(Color.white, new Color(1f, 0.9f, 0.55f));
+            Burst(star, 0f, 9);
+            var sh = star.shape; sh.shapeType = ParticleSystemShapeType.Hemisphere; sh.radius = 0.03f;
+            Stretch(star, 0.09f);
+        }
+        var chips = System(root, "Chips", 1f);
+        {
+            var m = chips.main;
+            m.startLifetime = new ParticleSystem.MinMaxCurve(0.35f, 0.7f);
+            m.startSpeed = new ParticleSystem.MinMaxCurve(2.5f * size, 6f * size);
+            m.startSize = new ParticleSystem.MinMaxCurve(0.06f * size, 0.14f * size);
+            m.startRotation3D = true;
+            m.startRotationX = m.startRotationY = m.startRotationZ = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+            m.startColor = new ParticleSystem.MinMaxGradient(color, Color.Lerp(color, Color.black, 0.3f));
+            m.gravityModifier = 2f;
+            Burst(chips, 0f, (int)(6 * size));
+            var sh = chips.shape; sh.shapeType = ParticleSystemShapeType.Cone; sh.angle = 50f; sh.radius = 0.05f;
+            var sol = chips.sizeOverLifetime; sol.enabled = true;
+            sol.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0f, 1f), new Keyframe(0.7f, 1f), new Keyframe(1f, 0f)));
+            MeshBits(chips);
+        }
+        var puff = System(root, "Puff", 0.6f);
+        {
+            var m = puff.main;
+            m.startLifetime = new ParticleSystem.MinMaxCurve(0.25f, 0.45f);
+            m.startSpeed = new ParticleSystem.MinMaxCurve(0.4f, 1.2f);
+            m.startSize = new ParticleSystem.MinMaxCurve(0.35f * size, 0.6f * size);
+            m.startColor = new Color(color.r, color.g, color.b, 0.4f);
+            Burst(puff, 0f, 3);
+            Fade(puff);
+        }
+        Finish(root, 1.2f);
+    }
+
+    /// Something solid breaks apart (rock, crate): big flash, chunks flying out, dust. No fire.
+    public static void Shatter(Vector3 pos, float size, Color color)
+    {
+        size = Mathf.Clamp(size, 0.4f, 6f);
+        var root = Root("Shatter FX", pos, Vector3.up);
+        var flash = System(root, "Flash", 0.2f);
+        {
+            var m = flash.main;
+            m.startLifetime = 0.12f; m.startSpeed = 0f; m.startSize = 3.4f * size;
+            m.startColor = new Color(1f, 0.98f, 0.9f, 0.95f);
+            Burst(flash, 0f, 1);
+        }
+        var star = System(root, "Star", 0.3f);
+        {
+            var m = star.main;
+            m.startLifetime = new ParticleSystem.MinMaxCurve(0.1f, 0.18f);
+            m.startSpeed = new ParticleSystem.MinMaxCurve(10f * size, 18f * size);
+            m.startSize = new ParticleSystem.MinMaxCurve(0.1f, 0.18f);
+            m.startColor = new ParticleSystem.MinMaxGradient(Color.white, new Color(1f, 0.9f, 0.55f));
+            Burst(star, 0f, 14);
+            var sh = star.shape; sh.shapeType = ParticleSystemShapeType.Sphere; sh.radius = 0.1f * size;
+            Stretch(star, 0.08f);
+        }
+        var chunks = System(root, "Chunks", 2f);
+        {
+            var m = chunks.main;
+            m.startLifetime = new ParticleSystem.MinMaxCurve(0.9f, 1.5f);
+            m.startSpeed = new ParticleSystem.MinMaxCurve(3.5f * Mathf.Sqrt(size), 8f * Mathf.Sqrt(size));
+            m.startSize = new ParticleSystem.MinMaxCurve(0.14f * size, 0.42f * size);
+            m.startRotation3D = true;
+            m.startRotationX = m.startRotationY = m.startRotationZ = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+            m.startColor = new ParticleSystem.MinMaxGradient(color, Color.Lerp(color, Color.black, 0.35f));
+            m.gravityModifier = 2.2f;
+            Burst(chunks, 0f, (int)(14 + 6 * size));
+            var sh = chunks.shape; sh.shapeType = ParticleSystemShapeType.Hemisphere; sh.radius = 0.35f * size; sh.rotation = new Vector3(-90f, 0f, 0f);
+            var rot = chunks.rotationOverLifetime; rot.enabled = true; rot.separateAxes = true;
+            rot.x = rot.y = rot.z = new ParticleSystem.MinMaxCurve(-7f, 7f);
+            var col = chunks.collision; col.enabled = true; col.type = ParticleSystemCollisionType.World; col.dampen = 0.5f; col.bounce = 0.3f; col.lifetimeLoss = 0.15f;
+            var sol = chunks.sizeOverLifetime; sol.enabled = true;
+            sol.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0f, 1f), new Keyframe(0.75f, 1f), new Keyframe(1f, 0f)));
+            MeshBits(chunks);
+        }
+        var dust = System(root, "Dust", 1.5f);
+        {
+            var m = dust.main;
+            m.startLifetime = new ParticleSystem.MinMaxCurve(0.6f, 1.1f);
+            m.startSpeed = new ParticleSystem.MinMaxCurve(0.8f * size, 2.4f * size);
+            m.startSize = new ParticleSystem.MinMaxCurve(0.8f * size, 1.5f * size);
+            m.startColor = new Color(Mathf.Lerp(color.r, 0.8f, 0.4f), Mathf.Lerp(color.g, 0.75f, 0.4f), Mathf.Lerp(color.b, 0.65f, 0.4f), 0.5f);
+            Burst(dust, 0f, (int)(8 + 3 * size));
+            var sh = dust.shape; sh.shapeType = ParticleSystemShapeType.Sphere; sh.radius = 0.4f * size;
+            var vel = dust.limitVelocityOverLifetime; vel.enabled = true; vel.limit = 0.4f; vel.dampen = 0.12f;
+            Fade(dust);
+        }
+        Finish(root, 2.5f);
+    }
+
+    /// Renders a system's particles as small solid cubes (chips, chunks).
+    static void MeshBits(ParticleSystem ps)
+    {
+        var r = ps.GetComponent<ParticleSystemRenderer>();
+        r.renderMode = ParticleSystemRenderMode.Mesh;
+        if (cube == null) cube = Resources.GetBuiltinResource<Mesh>("Cube.fbx");
+        r.mesh = cube;
+        if (Solid != null) r.sharedMaterial = Solid;
+    }
+
     // ------------------------------------------------------------------ helpers
 
     static Transform Root(string name, Vector3 pos, Vector3 dir)

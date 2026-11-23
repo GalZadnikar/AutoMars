@@ -64,11 +64,11 @@ public class SandHUD : MonoBehaviour
             Vector3 sp = cam.WorldToScreenPoint(pos + Vector3.up * barHeight);
             RectTransformUtility.ScreenPointToLocalPointInRectangle(canvasRect, sp, null, out var lp);
             tankRoot.anchoredPosition = lp;
-            float frac = gun.capacity > 0 ? gun.Stored / gun.capacity : 0f;
+            float frac = gun.unlimitedCapacity ? 1f : gun.capacity > 0 ? gun.Stored / gun.capacity : 0f;
             shownFill = Mathf.Lerp(shownFill, frac, Time.deltaTime * 12f);
             tankFill.anchorMax = new Vector2(Mathf.Clamp01(shownFill), 1f);
             tankFillImg.color = gun.IsFull ? Red : Green;
-            string txt = gun.IsFull ? "FULL" : Mathf.FloorToInt(gun.Stored) + "/" + gun.capacity;
+            string txt = gun.IsFull ? "FULL" : gun.unlimitedCapacity ? Mathf.FloorToInt(gun.Stored) + " / \u221E" : Mathf.FloorToInt(gun.Stored) + "/" + gun.capacity;
             tankLabel.text = txt; tankShadow.text = txt;
             tankLabel.color = gun.IsFull ? Red : Color.white;
         }
