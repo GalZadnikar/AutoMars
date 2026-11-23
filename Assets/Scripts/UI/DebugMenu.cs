@@ -14,6 +14,7 @@ public class DebugMenu : MonoBehaviour
     {
         if (!Application.isEditor && !Debug.isDebugBuild) return;
         if (FindFirstObjectByType<DebugMenu>() != null) return;
+        if (PlayerLabDebug.IsLabScene) return;   // the PlayerLab scene has its own panel (PlayerLabDebug)
         var canvas = GameObject.Find("UI Canvas");
         if (canvas == null) return;
         var go = new GameObject("DebugMenu", typeof(RectTransform));

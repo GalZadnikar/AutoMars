@@ -19,8 +19,12 @@ public class JoystickPlayerController : MonoBehaviour
 
     /// Multiplies moveSpeed; other systems set it (e.g. the suction gun slows you while sucking). 1 = normal.
     [System.NonSerialized] public float speedMultiplier = 1f;
+    /// A second multiplier for the tool in the hands (the shovel walks slowly while digging). 1 = normal.
+    [System.NonSerialized] public float toolSpeedMultiplier = 1f;
     /// Set from code to steer the player without a joystick (automated tests). Zero = off.
     [System.NonSerialized] public Vector2 scriptedInput;
+    /// Keeps the run animation off while another animation plays during movement (digging into sand with the shovel).
+    [System.NonSerialized] public bool suppressRunAnim;
 
     CharacterController controller;
     Animator anim;
@@ -91,11 +95,11 @@ public class JoystickPlayerController : MonoBehaviour
         if (controller.isGrounded && verticalVelocity < 0) verticalVelocity = -2f;
         verticalVelocity -= gravity * Time.deltaTime;
 
-        Vector3 velocity = move * moveSpeed * speedMultiplier;
+        Vector3 velocity = move * moveSpeed * speedMultiplier * toolSpeedMultiplier;
         velocity.y = verticalVelocity;
         if (PipeTether.Instance != null) velocity = PipeTether.Instance.ConstrainVelocity(transform.position, velocity, Time.deltaTime);   // pipe to the base: can't walk past its end
         controller.Move(velocity * Time.deltaTime);
 
-        if (anim != null) anim.SetInteger(AnimationPar, moving ? 1 : 0);
+        if (anim != null) anim.SetInteger(AnimationPar, moving && !suppressRunAnim ? 1 : 0);
     }
 }

@@ -149,6 +149,7 @@ public class PlayerMelee : MonoBehaviour
     /// Contact frame of a swing.
     public void MeleeHit()
     {
+        if (!enabled) return;   // the shovel uses the same clips
         if (target == null || !target.Alive) return;
         if (EdgeDistance(target) > range + 0.6f) return;
         Vector3 from = weaponTip != null ? weaponTip.position : transform.position + Vector3.up * 1.2f + transform.forward * 0.8f;
@@ -166,6 +167,7 @@ public class PlayerMelee : MonoBehaviour
     /// 1 at the start of the fast part of a swing, 0 after the follow-through.
     public void MeleeTrail(int on)
     {
+        if (!enabled) return;
         if (trail != null) trail.emitting = on != 0;
     }
 }

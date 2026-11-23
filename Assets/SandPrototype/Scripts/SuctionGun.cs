@@ -12,6 +12,8 @@ public class SuctionGun : MonoBehaviour
     public Transform player;
 
     [Header("Gun stats")]
+    [Tooltip("Gun level. Tough (crusted) sand needs a gun of at least its hardness; a weaker one only scratches it.")]
+    public int power = 1;
     public float range = 3.5f;
     [Range(5f, 80f)] public float halfAngle = 30f;
     [Tooltip("How fast sand disappears at the nozzle (1 = one full grid point per second)")]
@@ -37,6 +39,8 @@ public class SuctionGun : MonoBehaviour
     public float mouthPower = 2.5f;
     [Tooltip("Sand right ahead slows the player smoothly, so he walks in at the pace the gun clears it")]
     public bool sandSlowsWalking = true;
+    /// Set by the shovel when its steady digging walk is off (A/B test): sand slows the player even with the gun put away.
+    [System.NonSerialized] public bool resistWhileHolstered;
     [Tooltip("Walking speed against deep sand (share of normal speed)")]
     [Range(0.05f, 1f)] public float minSandSpeed = 0.15f;
 
@@ -82,6 +86,17 @@ public class SuctionGun : MonoBehaviour
     public bool Holstered { get; set; }
     /// The gun model (null outside Play mode).
     public Transform GunTransform => gun;
+    /// Debug: set the tank content (0 = empty it without paying out).
+    public void DevSetStored(float units) { Stored = Mathf.Max(0f, units); if (Stored <= 0f) { StoredMaterials = 0f; payout = 0f; } }
+    /// Sand from another tool (the shovel) goes into the same tank. Returns the units that fitted.
+    public float AddSand(float volume, float materials)
+    {
+        float units = volume * unitsPerCubicMetre;
+        float add = Mathf.Max(0f, unlimitedCapacity ? units : Mathf.Min(units, capacity - Stored));
+        Stored += add;
+        StoredMaterials += materials;
+        return add;
+    }
 
     JoystickPlayerController pc;
     const int AimBins = 72;   // 5 degrees each
@@ -145,12 +160,14 @@ public class SuctionGun : MonoBehaviour
             for (int i = 0; i < SandField.All.Count; i++)
             {
                 var f = SandField.All[i];
-                vol += f.Suck(from, fwd, range, halfAngle, suckRate, dt, out float m);
+                vol += f.Suck(from, fwd, range, halfAngle, suckRate, dt, out float m, power);
                 mats += m;
+                CrustFX(f);
                 if (mouthPower > 0f && mouthRange > 0f)
                 {
-                    vol += f.Suck(mouth, fwd, mouthRange + MouthBack, mouthHalfAngle, suckRate * mouthPower, dt, out m);
+                    vol += f.Suck(mouth, fwd, mouthRange + MouthBack, mouthHalfAngle, suckRate * mouthPower, dt, out m, power);
                     mats += m;
+                    CrustFX(f);
                 }
             }
             if (vol > 0f)
@@ -168,10 +185,24 @@ public class SuctionGun : MonoBehaviour
         // walking speed: a bit slower while sucking, and sand right ahead slows the player smoothly, so he glides
         // into it at the pace the gun clears it (instead of running into a wall and stopping dead)
         float want = Mathf.Lerp(1f, suckMoveSpeed, blend);
-        if (sandSlowsWalking) want *= SandResistance(pos, fwd);
+        // only while the gun is out: the shovel paces the walk itself (a steady digging walk), and this per-bite
+        // slow-down on top of it made the player surge and stop after every bite
+        if (sandSlowsWalking && (!Holstered || resistWhileHolstered)) want *= SandResistance(pos, fwd);
         moveMul = Mathf.MoveTowards(moveMul, want, dt * (want < moveMul ? 14f : 5f));
         if (pc != null) pc.speedMultiplier = moveMul;
         UpdateFX(dt, pos, fwd);
+    }
+
+    float nextCrustFx;
+    static readonly Color CrackCol = new Color(0.42f, 0.19f, 0.1f);
+
+    /// Tough sand: plates of crust break off and fly to the nozzle.
+    void CrustFX(SandField f)
+    {
+        if (f.LastCrustBreaks <= 0 || Time.time < nextCrustFx) return;
+        nextCrustFx = Time.time + 0.06f;
+        Vector3 to = nozzle.position - f.LastCrustPos;
+        CombatFX.CrustBreak(f.LastCrustPos, to.normalized + Vector3.up * 0.3f, Color.Lerp(f.ParticleColor, CrackCol, 0.45f));
     }
 
     const float MouthBack = 0.35f;   // the mouth cone starts a little behind the player, so it also covers beside the feet

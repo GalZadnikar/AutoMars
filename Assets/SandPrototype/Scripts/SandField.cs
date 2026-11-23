@@ -36,6 +36,24 @@ public class SandField : MonoBehaviour
     [Tooltip("Materials you get for sucking up this whole field (paid out when the tank is emptied at the base)")]
     public int materialsTotal = 60;
 
+    [Header("Tough sand (crust)")]
+    [Tooltip("0 = normal sand. Higher = baked sand with a cracked crust: a tool needs at least this power level to clear it properly")]
+    public int hardness = 0;
+    [Tooltip("How fast a too-weak tool still eats it (0.06 = 6% of normal: it visibly works, but it is hopeless)")]
+    [Range(0f, 1f)] public float underpoweredRate = 0.06f;
+    [Tooltip("How fast a strong-enough tool gets through the crust itself (the top layer), before the soft sand under it goes at full speed")]
+    [Range(0.05f, 1f)] public float crustRate = 0.45f;
+    [Tooltip("How much the crusted top stands above the soft sand around it (m)")]
+    public float crustThickness = 0.14f;
+
+    /// Power level of the sand tool the player holds right now (set by PlayerTools). Fields harder than this show their lock label.
+    public static int ToolPower = 99;
+    /// How many points lost their crust in the last Suck call, and where one of them was (for the chip effect).
+    public int LastCrustBreaks { get; private set; }
+    public Vector3 LastCrustPos { get; private set; }
+    public bool Locked => hardness > ToolPower;
+    const float CrustLevel = 0.85f;   // sand amount above this still has its crust
+
     [Header("Finishing")]
     [Tooltip("When this little sand is left (0.12 = 12%), the rest is cleared automatically with a puff")]
     [Range(0f, 0.5f)] public float autoClearLeft = 0.12f;
@@ -141,6 +159,7 @@ void LateUpdate()
     float[] fadeFrom;
     float fadeT = 1f;
     int shownPct = -1;
+    bool shownLocked;
     float labelPunch;
     Vector3 labelBaseScale;
 
@@ -245,11 +264,13 @@ void MarkHiddenSand()
     {
         if (label == null) return;
         int pct = cleared ? 100 : Mathf.Clamp(Mathf.FloorToInt(Progress * 100f + 0.0001f), 0, 99);
-        if (pct != shownPct)
+        bool locked = Locked && !cleared;
+        if (pct != shownPct || locked != shownLocked)
         {
             if (shownPct >= 0 && !instant) labelPunch = 1f;
             shownPct = pct;
-            label.text = pct + "%";
+            shownLocked = locked;
+            label.text = locked ? pct + "%\n<size=55%><color=#FF4A2E>NEEDS GUN LV " + hardness + "</color></size>" : pct + "%";
         }
         bool show = !(cleared && Application.isPlaying && Time.time > clearedTime + 1.5f);
         if (label.gameObject.activeSelf != show) label.gameObject.SetActive(show);
@@ -274,7 +295,7 @@ void MarkHiddenSand()
         var r = GetComponent<MeshRenderer>();
         if (r == null || r.sharedMaterial == null) return;
         var m = r.sharedMaterial;
-        if (Mathf.Approximately(hueShift, 0f) && Mathf.Approximately(saturation, 1f) && Mathf.Approximately(brightness, 1f))
+        if (Mathf.Approximately(hueShift, 0f) && Mathf.Approximately(saturation, 1f) && Mathf.Approximately(brightness, 1f) && hardness <= 0)
         {
             r.SetPropertyBlock(null);
             return;
@@ -285,6 +306,7 @@ void MarkHiddenSand()
         if (m.HasProperty(ShadeId)) mpb.SetColor(ShadeId, Shift(m.GetColor(ShadeId)));
         if (m.HasProperty(DeepId)) mpb.SetColor(DeepId, Shift(m.GetColor(DeepId)));
         if (m.HasProperty(RimId)) mpb.SetColor(RimId, Shift(m.GetColor(RimId)));
+        mpb.SetFloat("_CrustStrength", hardness > 0 ? 1f : 0f);
         r.SetPropertyBlock(mpb);
     }
 
@@ -411,10 +433,14 @@ void MarkHiddenSand()
             int i = z * nx + x;
             float a = amount[i];
             float h = a > 0.001f ? Mathf.Max(0.2f, sandHeight + bump[i]) * a * (2f - a) : -0.25f;
+            // G: crust still on. Linear around CrustLevel; the shader cuts it hard, plate by plate (a broken edge).
+            float crust = hardness > 0 ? Mathf.InverseLerp(CrustLevel - 0.12f, CrustLevel + 0.08f, a) : 0f;
+            // the crusted top swells up a little over the same band (smooth, so no blocks can stick out of a missing plate)
+            if (hardness > 0) h += crustThickness * Mathf.SmoothStep(0f, 1f, crust);
             heights[i] = groundY[i] + h;
             verts[i] = new Vector3(ox + x * sx, heights[i], oz + z * sz);
             float depth = Mathf.Clamp01(h / (sandHeight * 0.7f));
-            colors[i] = new Color(0.2f + 0.8f * depth, 0f, 0f, a);
+            colors[i] = new Color(0.2f + 0.8f * depth, crust, 0f, a);
         }
         for (int z = 0; z < nz; z++)
         for (int x = 0; x < nx; x++)
@@ -471,10 +497,12 @@ void MarkHiddenSand()
 
     /// Removes sand in a cone (apex `from`, pointing along `dir`). Points near the apex and on the centre line go fastest.
     /// Returns the removed volume in cubic metres.
-    public float Suck(Vector3 from, Vector3 dir, float range, float halfAngle, float rate, float dt, out float materials)
+    public float Suck(Vector3 from, Vector3 dir, float range, float halfAngle, float rate, float dt, out float materials, int power = 99)
     {
         materials = 0f;
+        LastCrustBreaks = 0;
         if (amount == null || cleared || rate <= 0f || dt <= 0f) return 0f;
+        bool weak = power < hardness;
         Vector2 o = Origin;
         from = ToLocal(from);
         dir = Quaternion.Inverse(builtRot) * dir;
@@ -505,8 +533,19 @@ void MarkHiddenSand()
                 // strongest near the nozzle and on the centre line, fading to 0 at the cone's sides and far end -> round, smooth bites
                 float far = d / range;
                 float k = Mathf.Lerp(1f, 0.3f, far) * Mathf.Clamp01((1f - far) * 5f) * (1f - side * side);
+                float before = amount[i];
+                if (hardness > 0)
+                {
+                    if (weak) k *= underpoweredRate;                 // too weak a tool: it only scratches
+                    else if (before > CrustLevel) k *= crustRate;    // the crust first, then the soft sand under it
+                }
                 float take = Mathf.Min(amount[i], rate * dt * k);
                 amount[i] -= take;
+                if (hardness > 0 && before > CrustLevel && amount[i] <= CrustLevel)
+                {
+                    LastCrustBreaks++;
+                    if (Random.value < 1f / LastCrustBreaks) LastCrustPos = ToWorld(o.x + x * sx, heights[i], o.y + z * sz);
+                }
                 if (amount[i] < 0.02f) { take += amount[i]; amount[i] = 0f; }
                 removed += take;
             }

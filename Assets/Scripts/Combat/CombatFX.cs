@@ -293,6 +293,137 @@ public static class CombatFX
         Finish(root, 2.5f);
     }
 
+    static readonly Color Pebble = new Color(0.42f, 0.27f, 0.22f);
+
+    /// A shovel goes into sand: a low spray of grains, a few pebbles and a puff. No flash (it is a dig, not a hit).
+    /// dir = where the spray flies (up and back toward the digger).
+    public static void SandDig(Vector3 pos, Vector3 dir, Color sand, float size = 1f)
+    {
+        var root = Root("Sand Dig FX", pos, dir);
+        var spray = System(root, "Spray", 0.6f);
+        {
+            var m = spray.main;
+            m.startLifetime = new ParticleSystem.MinMaxCurve(0.3f, 0.55f);
+            m.startSpeed = new ParticleSystem.MinMaxCurve(2.5f * size, 6f * size);
+            m.startSize = new ParticleSystem.MinMaxCurve(0.12f * size, 0.3f * size);
+            m.startColor = new ParticleSystem.MinMaxGradient(sand, Color.Lerp(sand, Color.white, 0.35f));
+            m.gravityModifier = 1.6f;
+            Burst(spray, 0f, (int)(16 * size));
+            var sh = spray.shape; sh.shapeType = ParticleSystemShapeType.Cone; sh.angle = 42f; sh.radius = 0.2f * size;
+            Shrink(spray);
+        }
+        var pebbles = System(root, "Pebbles", 1f);
+        {
+            var m = pebbles.main;
+            m.startLifetime = new ParticleSystem.MinMaxCurve(0.5f, 0.9f);
+            m.startSpeed = new ParticleSystem.MinMaxCurve(2f * size, 5f * size);
+            m.startSize = new ParticleSystem.MinMaxCurve(0.07f * size, 0.15f * size);
+            m.startRotation3D = true;
+            m.startRotationX = m.startRotationY = m.startRotationZ = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+            m.startColor = new ParticleSystem.MinMaxGradient(Pebble, Color.Lerp(Pebble, sand, 0.4f));
+            m.gravityModifier = 2.2f;
+            Burst(pebbles, 0f, 4);
+            var sh = pebbles.shape; sh.shapeType = ParticleSystemShapeType.Cone; sh.angle = 35f; sh.radius = 0.15f * size;
+            var rot = pebbles.rotationOverLifetime; rot.enabled = true; rot.separateAxes = true;
+            rot.x = rot.y = rot.z = new ParticleSystem.MinMaxCurve(-8f, 8f);
+            Shrink(pebbles);
+            MeshBits(pebbles);
+        }
+        var puff = System(root, "Puff", 0.8f);
+        {
+            var m = puff.main;
+            m.startLifetime = new ParticleSystem.MinMaxCurve(0.35f, 0.6f);
+            m.startSpeed = new ParticleSystem.MinMaxCurve(0.3f, 1.1f);
+            m.startSize = new ParticleSystem.MinMaxCurve(0.5f * size, 0.9f * size);
+            m.startColor = new Color(Mathf.Lerp(sand.r, 1f, 0.3f), Mathf.Lerp(sand.g, 0.95f, 0.3f), Mathf.Lerp(sand.b, 0.8f, 0.3f), 0.35f);
+            Burst(puff, 0f, 3);
+            Fade(puff);
+        }
+        Finish(root, 1.3f);
+    }
+
+    /// The shovel flicks its load away: a tight clump of sand with a pebble or two flying in an arc along `dir`.
+    public static void SandToss(Vector3 pos, Vector3 dir, Color sand, float size = 1f)
+    {
+        var root = Root("Sand Toss FX", pos, dir);
+        var clump = System(root, "Clump", 1f);
+        {
+            var m = clump.main;
+            m.startLifetime = new ParticleSystem.MinMaxCurve(0.5f, 0.9f);
+            m.startSpeed = new ParticleSystem.MinMaxCurve(4f * size, 7.5f * size);
+            m.startSize = new ParticleSystem.MinMaxCurve(0.14f * size, 0.36f * size);
+            m.startColor = new ParticleSystem.MinMaxGradient(sand, Color.Lerp(sand, Color.white, 0.3f));
+            m.gravityModifier = 2.2f;
+            Burst(clump, 0f, (int)(18 * size));
+            var sh = clump.shape; sh.shapeType = ParticleSystemShapeType.Cone; sh.angle = 16f; sh.radius = 0.12f * size;
+            Shrink(clump);
+        }
+        var pebbles = System(root, "Pebbles", 1.2f);
+        {
+            var m = pebbles.main;
+            m.startLifetime = new ParticleSystem.MinMaxCurve(0.7f, 1.1f);
+            m.startSpeed = new ParticleSystem.MinMaxCurve(4f * size, 7f * size);
+            m.startSize = new ParticleSystem.MinMaxCurve(0.08f * size, 0.17f * size);
+            m.startRotation3D = true;
+            m.startRotationX = m.startRotationY = m.startRotationZ = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+            m.startColor = new ParticleSystem.MinMaxGradient(Pebble, Color.Lerp(Pebble, sand, 0.4f));
+            m.gravityModifier = 2.4f;
+            Burst(pebbles, 0f, 3);
+            var sh = pebbles.shape; sh.shapeType = ParticleSystemShapeType.Cone; sh.angle = 20f; sh.radius = 0.1f * size;
+            var rot = pebbles.rotationOverLifetime; rot.enabled = true; rot.separateAxes = true;
+            rot.x = rot.y = rot.z = new ParticleSystem.MinMaxCurve(-9f, 9f);
+            var col = pebbles.collision; col.enabled = true; col.type = ParticleSystemCollisionType.World; col.dampen = 0.5f; col.bounce = 0.3f; col.lifetimeLoss = 0.3f;
+            Shrink(pebbles);
+            MeshBits(pebbles);
+        }
+        Finish(root, 1.6f);
+    }
+
+    /// A piece of sand crust breaks off: a few flat plates fly along `dir` (toward the gun) with a small dust puff.
+    public static void CrustBreak(Vector3 pos, Vector3 dir, Color crust, float size = 1f)
+    {
+        var root = Root("Crust Break FX", pos, dir);
+        var plates = System(root, "Plates", 0.8f);
+        {
+            var m = plates.main;
+            m.startLifetime = new ParticleSystem.MinMaxCurve(0.3f, 0.55f);
+            m.startSpeed = new ParticleSystem.MinMaxCurve(4f * size, 8f * size);
+            m.startSize3D = true;
+            m.startSizeX = new ParticleSystem.MinMaxCurve(0.18f * size, 0.36f * size);
+            m.startSizeY = new ParticleSystem.MinMaxCurve(0.04f * size, 0.07f * size);
+            m.startSizeZ = new ParticleSystem.MinMaxCurve(0.16f * size, 0.3f * size);
+            m.startRotation3D = true;
+            m.startRotationX = m.startRotationY = m.startRotationZ = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+            m.startColor = new ParticleSystem.MinMaxGradient(crust, Color.Lerp(crust, Color.black, 0.3f));
+            m.gravityModifier = 0.6f;
+            Burst(plates, 0f, 4);
+            var sh = plates.shape; sh.shapeType = ParticleSystemShapeType.Cone; sh.angle = 28f; sh.radius = 0.25f * size;
+            var rot = plates.rotationOverLifetime; rot.enabled = true; rot.separateAxes = true;
+            rot.x = rot.y = rot.z = new ParticleSystem.MinMaxCurve(-10f, 10f);
+            var sol = plates.sizeOverLifetime; sol.enabled = true;
+            sol.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0f, 1f), new Keyframe(0.5f, 1f), new Keyframe(1f, 0f)));
+            MeshBits(plates);
+        }
+        var puff = System(root, "Puff", 0.6f);
+        {
+            var m = puff.main;
+            m.startLifetime = new ParticleSystem.MinMaxCurve(0.25f, 0.45f);
+            m.startSpeed = new ParticleSystem.MinMaxCurve(0.3f, 1f);
+            m.startSize = new ParticleSystem.MinMaxCurve(0.4f * size, 0.7f * size);
+            m.startColor = new Color(crust.r, crust.g, crust.b, 0.3f);
+            Burst(puff, 0f, 2);
+            Fade(puff);
+        }
+        Finish(root, 1f);
+    }
+
+    /// Particles keep their size, then shrink away at the end of their life.
+    static void Shrink(ParticleSystem ps)
+    {
+        var sol = ps.sizeOverLifetime; sol.enabled = true;
+        sol.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0f, 1f), new Keyframe(0.6f, 1f), new Keyframe(1f, 0f)));
+    }
+
     /// Renders a system's particles as small solid cubes (chips, chunks).
     static void MeshBits(ParticleSystem ps)
     {
