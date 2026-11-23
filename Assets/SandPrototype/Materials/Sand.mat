@@ -25,14 +25,19 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
+    - _CrackWidth: 0.09
+    - _CrustScale: 0.55
+    - _CrustStrength: 0
     - _RimPower: 3
     - _RimStrength: 0.2
     - _ShadeSoft: 0.5
     - _ShadowStrength: 0.45
     m_Colors:
     - _ColorDeep: {r: 0.86, g: 0.5, b: 0.19999996, a: 1}
-    - _ColorShade: {r: 0.96999997, g: 0.6399999, b: 0.24999997, a: 1}
+    - _ColorShade: {r: 0.8980392, g: 0.5882353, b: 0.22745098, a: 1}
     - _ColorTop: {r: 1, g: 0.8399999, b: 0.37999994, a: 1}
+    - _CrackColor: {r: 0.41999996, g: 0.18999997, b: 0.09999997, a: 1}
+    - _CrustColor: {r: 0.8, g: 0.65999997, b: 0.54999995, a: 1}
     - _RimColor: {r: 1, g: 0.95, b: 0.75, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

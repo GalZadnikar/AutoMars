@@ -16,6 +16,8 @@ public class PlayerInteractions : MonoBehaviour
     [Header("Base (opens the build popup)")]
     [Tooltip("Looked up automatically when empty")]
     public BuildMode buildMenu;
+    [Tooltip("Off = no floating BASE button (the mobile HUD shows its own upgrade panel at the base)")]
+    public bool showBaseButton = true;
     public Vector3 baseButtonOffset = new Vector3(0f, 5.4f, 0f);
 
     public float botRadius = 3f;
@@ -147,7 +149,7 @@ public class PlayerInteractions : MonoBehaviour
 
     void UpdateBaseButton()
     {
-        var hb = BaseInRange();
+        var hb = showBaseButton ? BaseInRange() : null;
         if (hb == null)
         {
             if (baseShown && baseButton != null) baseButton.Hide();

@@ -32,6 +32,10 @@ public class MeleeTarget : MonoBehaviour
     public Color debrisColor = new Color(0.6f, 0.5f, 0.42f);
     public float fxSize = 1f;
 
+    [Header("Reward")]
+    [Tooltip("Stone the player gets when this breaks (0 = nothing)")]
+    public int stoneYield;
+
     [Header("Break")]
     public float breakFXSize = 1.3f;
     [Tooltip("Seconds until it comes back after being destroyed (0 = it stays destroyed)")]
@@ -126,6 +130,7 @@ public class MeleeTarget : MonoBehaviour
         SetFlash(false);
         ResetPose();
         CombatFX.Shatter(Center, breakFXSize, debrisColor);
+        if (stoneYield > 0 && Economy.Instance != null) Economy.Instance.Add(ResourceKind.Stone, stoneYield);
         barWasShown = hp.showBar;
         hp.showBar = false;
         SetShown(false);
