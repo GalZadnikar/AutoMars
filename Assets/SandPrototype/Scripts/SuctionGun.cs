@@ -148,7 +148,7 @@ public class SuctionGun : MonoBehaviour
         Unloading = false;
         if (Stored > 0f)
             foreach (var h in HomeBase.All)
-                if (h != null && h.InRange(pos)) { Unload(dt); Unloading = true; break; }
+                if (h != null && h.InRange(pos)) { Unload(dt, h); Unloading = true; break; }
 
         // suck: the long cone, plus a short wide 'mouth' at the feet that keeps the path as wide as the player
         Sucking = false;
@@ -303,7 +303,7 @@ public class SuctionGun : MonoBehaviour
 
     // ------------------------------------------------------------------ unloading
 
-    void Unload(float dt)
+    void Unload(float dt, HomeBase home)
     {
         float d = Mathf.Min(Stored, unloadRate * dt);
         float share = Stored > 0f ? d / Stored : 1f;
@@ -321,7 +321,10 @@ public class SuctionGun : MonoBehaviour
         if (whole > 0)
         {
             payout -= whole;
-            if (Economy.Instance != null) Economy.Instance.AddMaterials(whole);
+            // a base with a brick machine takes the sand into its hopper (the bricks pay when picked up)
+            var maker = BrickMaker.Of(home);
+            if (maker != null) maker.AddSand(whole, Holstered || nozzle == null ? player.position + Vector3.up * 1.1f : nozzle.position);
+            else if (Economy.Instance != null) Economy.Instance.AddMaterials(whole);
             PaidOut?.Invoke(whole);
         }
     }
