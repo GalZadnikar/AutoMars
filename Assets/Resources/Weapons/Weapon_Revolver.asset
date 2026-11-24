@@ -1,0 +1,49 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 72a2383c281aa454dad8a05407e2934b, type: 3}
+  m_Name: Weapon_Revolver
+  m_EditorClassIdentifier: Assembly-CSharp::WeaponDef
+  displayName: REVOLVER
+  icon: {fileID: 21300000, guid: 131eca02e9f544332bf7089e889167db, type: 3}
+  color: {r: 1, g: 0.6, b: 0.2, a: 1}
+  model: {fileID: 919132149155446097, guid: 59004126750e64b7cbe505e9089ec182, type: 3}
+  modelScale: 1.4
+  grip: {x: 0, y: -0.073027365, z: -0.0765683}
+  muzzle: {x: 0, y: 0.08229534, z: 0.39156717}
+  damage: 10
+  range: 6.5
+  magazine: 6
+  fireInterval: 0.55
+  reloadTime: 1.6
+  pellets: 1
+  spread: 0
+  speed: 40
+  homing: 90
+  radius: 0.2
+  pierce: 1
+  splashRadius: 0
+  splashDamage: 0
+  knockback: 0.9
+  recoilAngle: 42
+  recoilBack: 0.16
+  recoilTime: 0.28
+  shotShake: 0.12
+  hitShake: 0.14
+  killShake: 0.4
+  flashLight: 8
+  casings: 0
+  projectileFx: {fileID: 144206, guid: 6531fcf59340b354fa8ac2e69f4c29ce, type: 3}
+  projectileScale: 0.95
+  muzzleFx: {fileID: 195376, guid: 346f3bf3686d682498113714ee132099, type: 3}
+  muzzleScale: 0.75
+  impactFx: {fileID: 132352, guid: 71b02155078e4bf4e962f302d3675af2, type: 3}
+  impactScale: 0.8

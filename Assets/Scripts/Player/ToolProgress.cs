@@ -64,6 +64,13 @@ public class ToolProgress : MonoBehaviour
     [Header("UI")]
     public Sprite shovelIcon;
     public Sprite pickaxeIcon;
+    [Header("Pickaxe look")]
+    [Tooltip("The pickaxe models (children of the player's Pickaxe object). One is shown: the last one whose level in Pickaxe Model Levels is reached")]
+    public GameObject[] pickaxeModels;
+    [Tooltip("Pickaxe level from which each model is used")]
+    public int[] pickaxeModelLevels = { 1, 3, 5 };
+    [Tooltip("HUD icon for each model (empty = Pickaxe Icon)")]
+    public Sprite[] pickaxeIcons;
 
     public event Action OnChanged;
 
@@ -84,7 +91,22 @@ public class ToolProgress : MonoBehaviour
     public int Level(ToolKind k) => k == ToolKind.Shovel ? shovelLevel : pickaxeLevel;
     public int MaxLevel(ToolKind k) => k == ToolKind.Shovel ? shovelLevels.Count : pickaxeLevels.Count;
     public bool IsMax(ToolKind k) => Level(k) >= MaxLevel(k);
-    public Sprite Icon(ToolKind k) => k == ToolKind.Shovel ? shovelIcon : pickaxeIcon;
+    public Sprite Icon(ToolKind k)
+    {
+        if (k == ToolKind.Shovel) return shovelIcon;
+        int look = PickaxeLook();
+        return pickaxeIcons != null && look < pickaxeIcons.Length && pickaxeIcons[look] != null ? pickaxeIcons[look] : pickaxeIcon;
+    }
+
+    /// Which pickaxe model belongs to the current pickaxe level (index into pickaxeModels).
+    public int PickaxeLook()
+    {
+        int look = 0;
+        if (pickaxeModelLevels != null)
+            for (int i = 0; i < pickaxeModelLevels.Length; i++)
+                if (pickaxeLevel >= pickaxeModelLevels[i]) look = i;
+        return look;
+    }
     public static string Name(ToolKind k) => k == ToolKind.Shovel ? "SHOVEL" : "PICKAXE";
     public static string Description(ToolKind k) => k == ToolKind.Shovel
         ? "Digs sand. Walk into sand and he digs his way through. Unload at the base."
@@ -173,6 +195,12 @@ public class ToolProgress : MonoBehaviour
             melee.damage = l.damage;
             melee.attackSpeed = l.swingSpeed;
             melee.range = l.reach;
+        }
+        if (pickaxeModels != null && pickaxeModels.Length > 0)
+        {
+            int look = Mathf.Min(PickaxeLook(), pickaxeModels.Length - 1);
+            for (int i = 0; i < pickaxeModels.Length; i++)
+                if (pickaxeModels[i] != null && pickaxeModels[i].activeSelf != (i == look)) pickaxeModels[i].SetActive(i == look);
         }
         OnChanged?.Invoke();
     }

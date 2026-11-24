@@ -1,13 +1,13 @@
 using UnityEngine;
 
-public enum PlayerTool { Pickaxe, Gun, Shovel, Pistol }
+public enum PlayerTool { Pickaxe, Gun, Shovel, Weapon }
 
 /// What the player holds: the pickaxe (rocks), or his sand tool - the shovel (stage 1) or the suction gun (later).
 /// Only one is out at a time.
 ///  - `sandTool` is the progression state: which tool he owns for sand.
 ///  - Auto switch (default): the pickaxe comes out next to something to smash, the sand tool next to sand.
 ///    Away from both, the last tool stays in the hands.
-///  - The pistol (weapon slot, PlayerPistol) comes out when an enemy is near; that wins over the other tools.
+///  - The weapon (weapon slot, PlayerWeapon) comes out when an enemy is near; that wins over the other tools.
 ///  - Toggle() / Equip() switch by hand (for a button); that turns auto switching off until SetAuto(true).
 /// While the gun is out both arms are pointed at it after the Animator has run, so it is held in the hands
 /// and stays steady in front of the body while the legs keep their idle / run animation.
@@ -23,8 +23,8 @@ public class PlayerTools : MonoBehaviour
     public float gunNear = 1.5f;
     [Tooltip("The shovel comes out this far before sand is in its reach (m)")]
     public float shovelNear = 2f;
-    [Tooltip("The pistol comes out this far before an enemy is in its range (m)")]
-    public float pistolNear = 1.5f;
+    [Tooltip("The weapon comes out this far before an enemy is in its range (m)")]
+    [UnityEngine.Serialization.FormerlySerializedAs("pistolNear")] public float weaponNear = 1.5f;
     [Tooltip("Shortest time between two automatic switches (s)")]
     public float minSwitchTime = 0.35f;
 
@@ -33,7 +33,7 @@ public class PlayerTools : MonoBehaviour
     public GameObject shovelModel;
     public SuctionGun gun;
     [Tooltip("The weapon slot (optional)")]
-    public PlayerPistol pistol;
+    public PlayerWeapon weapon;
     public Transform rightUpperArm, rightForearm, leftUpperArm, leftForearm;
 
     [Header("Gun hold")]
@@ -51,7 +51,7 @@ public class PlayerTools : MonoBehaviour
     {
         melee = GetComponent<PlayerMelee>();
         shovel = GetComponent<PlayerShovel>();
-        if (pistol == null) pistol = GetComponent<PlayerPistol>();
+        if (weapon == null) weapon = GetComponent<PlayerWeapon>();
         if (gun == null) gun = FindFirstObjectByType<SuctionGun>();
         Apply();
     }
@@ -83,7 +83,7 @@ public class PlayerTools : MonoBehaviour
         if (gun != null) gun.Holstered = tool != PlayerTool.Gun;
         if (melee != null && melee.enabled != (tool == PlayerTool.Pickaxe)) melee.enabled = tool == PlayerTool.Pickaxe;
         if (shovel != null && shovel.enabled != (tool == PlayerTool.Shovel)) shovel.enabled = tool == PlayerTool.Shovel;
-        if (pistol != null) pistol.SetInHands(tool == PlayerTool.Pistol);
+        if (weapon != null) weapon.SetInHands(tool == PlayerTool.Weapon);
     }
 
     void Update()
@@ -91,11 +91,11 @@ public class PlayerTools : MonoBehaviour
         sinceSwitch += Time.deltaTime;
         if (autoSwitch)
         {
-            if (tool == PlayerTool.Pistol && !HasPistol) Set(PlayerTool.Pickaxe);
-            else if (tool != PlayerTool.Pickaxe && tool != PlayerTool.Pistol && tool != sandTool) Set(sandTool);   // holding a sand tool he no longer uses
+            if (tool == PlayerTool.Weapon && !HasWeapon) Set(PlayerTool.Pickaxe);
+            else if (tool != PlayerTool.Pickaxe && tool != PlayerTool.Weapon && tool != sandTool) Set(sandTool);   // holding a sand tool he no longer uses
             else if (sinceSwitch >= minSwitchTime)
             {
-                if (EnemyNear()) Set(PlayerTool.Pistol);
+                if (EnemyNear()) Set(PlayerTool.Weapon);
                 else if (TargetNear()) Set(PlayerTool.Pickaxe);
                 else if (SandNear()) Set(sandTool);
             }
@@ -105,12 +105,12 @@ public class PlayerTools : MonoBehaviour
         SandField.ToolPower = sandTool == PlayerTool.Gun ? (gun != null ? gun.power : 0) : (shovel != null ? shovel.power : 0);
     }
 
-    bool HasPistol => pistol != null && pistol.owned && pistol.isActiveAndEnabled;
+    bool HasWeapon => weapon != null && weapon.Owned && weapon.isActiveAndEnabled;
 
-    /// An enemy the pistol could shoot is close (rocks are not targetable, so they don't count).
+    /// An enemy the weapon could shoot is close (rocks are not targetable, so they don't count).
     bool EnemyNear()
     {
-        return HasPistol && Targeting.FindNearest(Team.Enemy, transform.position, pistol.range + pistolNear) != null;
+        return HasWeapon && Targeting.FindNearest(Team.Enemy, transform.position, weapon.Range + weaponNear) != null;
     }
 
     bool TargetNear()

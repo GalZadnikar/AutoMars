@@ -1,38 +1,29 @@
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 
-/// The player's weapon slot: a pistol with a small magazine.
-///  - PlayerTools takes it out when an enemy comes near. With the joystick released the player turns to the
-///    nearest enemy in range, raises his arm and fires by himself.
-///  - Every shot uses one bullet. When the magazine is empty it reloads by itself (reloadTime), then goes on.
-///    With no enemy around for idleReloadDelay a half-empty magazine is topped up too. Reload() = by hand (HUD tile).
-///  - Feel: muzzle flash + light, a fast tracer, the arm kicks up and the gun slides back, a casing flies out,
-///    a small camera kick. The damage lands when the tracer arrives: the enemy flashes, squashes, shows a number
-///    (MeleeTarget), a ring under it pulses, and the kill gets a bigger camera kick.
-///  - The HUD tile (WeaponSlotView) reads Ammo / Reloading / ReloadProgress.
-public class PlayerPistol : MonoBehaviour
+/// The player's weapon slot. Holds one WeaponDef at a time (pistol, revolver, scatter gun ...); WeaponPickup
+/// swaps it for the one lying on the ground.
+///  - PlayerTools takes the weapon out when an enemy comes near. With the joystick released the player turns to
+///    the nearest enemy he can see, raises his arm and fires by himself.
+///  - Every shot uses one round of the magazine. Empty = it reloads by itself, then goes on. With no enemy around
+///    for idleReloadDelay a magazine that isn't full is topped up. Reload() = by hand (tap on the HUD tile).
+///  - A shot = WeaponProjectile(s) + the weapon's muzzle effect, a light flash, recoil of the arm and the gun,
+///    a casing and a small camera kick. The hit (DealHit) makes the enemy flash, squash and show a number,
+///    pulses the ring under it and kicks the camera harder on the kill.
+///  - The HUD tile (WeaponSlotView) reads weapon / Ammo / Reloading / ReloadProgress.
+public class PlayerWeapon : MonoBehaviour
 {
-    public static PlayerPistol Instance { get; private set; }
-    /// Below 1 while one of the pistol's bullets deals its damage: enemies multiply their knockback with it,
-    /// so six fast bullets don't pin them in place the way six pickaxe blows would.
+    public static PlayerWeapon Instance { get; private set; }
+    /// Not 1 only while one of the weapon's hits deals its damage: enemies multiply their knockback with it,
+    /// so a stream of small bullets doesn't pin them the way as many pickaxe blows would.
     public static float HitKnockScale { get; private set; } = 1f;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     static void ResetStatics() { Instance = null; HitKnockScale = 1f; }
 
     [Header("Weapon")]
-    [Tooltip("Off = the player doesn't have the weapon yet (HUD tile hidden, never taken out)")]
-    public bool owned = true;
-    public float damage = 4f;
-    [Tooltip("How far it shoots (m)")]
-    public float range = 6.5f;
-    [Tooltip("Bullets per magazine")]
-    [Min(1)] public int magazine = 6;
-    [Tooltip("Seconds between two shots")]
-    public float fireInterval = 0.26f;
-    [Tooltip("Seconds to reload an empty magazine")]
-    public float reloadTime = 1.1f;
+    [Tooltip("The weapon he has now (empty = none: the HUD tile is hidden). A pickup on the ground swaps it")]
+    public WeaponDef weapon;
     [Tooltip("With no enemy in range for this long, a magazine that isn't full is reloaded (s)")]
     public float idleReloadDelay = 1.2f;
     [Tooltip("Off = he only shoots while standing (like the pickaxe). On = also while walking, at enemies in front of him")]
@@ -50,65 +41,48 @@ public class PlayerPistol : MonoBehaviour
     [Tooltip("Enemies behind rocks / buildings are not shot")]
     public bool lineOfSight = true;
 
-    [Header("Shot feel")]
-    public Color color = new Color(1f, 0.78f, 0.3f);
-    [Tooltip("Tracer speed (m/s). The damage lands when it arrives")]
-    public float bulletSpeed = 70f;
-    public float tracerLength = 1.8f;
-    public float tracerWidth = 0.1f;
-    [Tooltip("How far the arm kicks up on a shot (degrees)")]
-    public float recoilAngle = 24f;
-    [Tooltip("How far the gun slides back on a shot (m)")]
-    public float recoilBack = 0.1f;
-    [Tooltip("Seconds the recoil takes to settle")]
-    public float recoilTime = 0.16f;
-    [Tooltip("Camera kick on every shot / on a hit / on the kill (0 = none)")]
-    public float shotShake = 0.05f;
-    public float hitShake = 0.08f;
-    public float killShake = 0.3f;
-    [Tooltip("How much of an enemy's normal knockback one bullet gives (1 = same as a pickaxe blow)")]
-    [Range(0f, 1f)] public float knockback = 0.3f;
-    [Tooltip("Brightness of the light flash at the muzzle (0 = none)")]
-    public float flashLight = 5f;
-    public bool casings = true;
+    [Header("Feel")]
     [Tooltip("Ring on the ground under the enemy he is shooting at")]
     public bool targetRing = true;
+    [Tooltip("Play the sounds that come with the Epic Toon FX prefabs (shots, impacts)")]
+    public bool sound;
+
+    [Header("Pickups (effects shared by every WeaponPickup)")]
+    [Tooltip("Looping glow under a weapon lying on the ground")]
+    public GameObject pickupGlowFx;
+    [Tooltip("Burst at the player when he takes a weapon")]
+    public GameObject pickupTakeFx;
+    public float pickupFxScale = 0.6f;
 
     [Header("Parts")]
-    [Tooltip("The gun model (origin at the grip, barrel along its Z)")]
-    public Transform model;
-    public Transform muzzle;
     [Tooltip("End of the right forearm: the gun sits here")]
     public Transform hand;
     public Transform rightUpperArm, rightForearm;
 
+    public bool Owned => weapon != null;
     public int Ammo { get; private set; }
+    public int Magazine => weapon != null ? weapon.magazine : 0;
+    public float Range => weapon != null ? weapon.range : 0f;
     public bool Reloading { get; private set; }
     /// 0 at the start of a reload, 1 when it is done (1 while not reloading).
-    public float ReloadProgress => Reloading && reloadTime > 0f ? Mathf.Clamp01(reloadT / reloadTime) : 1f;
-    /// The pistol is the tool in the player's hands (set by PlayerTools).
+    public float ReloadProgress => Reloading && weapon != null && weapon.reloadTime > 0f ? Mathf.Clamp01(reloadT / weapon.reloadTime) : 1f;
+    /// The weapon is the tool in the player's hands (set by PlayerTools).
     public bool InHands { get; private set; }
     public Health Target => target;
 
     public event Action OnShot;
-    /// true = that bullet killed the target
+    /// true = that hit killed the target
     public event Action<bool> OnHit;
     public event Action OnReloadStart, OnReloadDone;
+    /// A pickup (or code) gave him another weapon.
+    public event Action OnWeaponChanged;
 
-    class Shot
-    {
-        public LineRenderer line;
-        public Vector3 start, head, to, dir;
-        public Health target;
-    }
-
-    readonly List<Shot> shots = new List<Shot>();
-    readonly Stack<LineRenderer> linePool = new Stack<LineRenderer>();
     JoystickPlayerController pc;
     Health target;
     Vector3 aimPoint;
     float aim, cooldown, reloadT, idleT, kick, ringPunch, flashT;
-    Transform fxRoot;
+    int lastKickFrame = -1;
+    Transform holder, muzzle, fxRoot;
     ParticleSystem casingFx;
     LineRenderer ring;
     Light flash;
@@ -116,9 +90,10 @@ public class PlayerPistol : MonoBehaviour
     void Awake()
     {
         Instance = this;
+        FxPool.Sound = sound;
         pc = GetComponent<JoystickPlayerController>();
-        Ammo = magazine;
-        if (model != null) model.gameObject.SetActive(InHands && owned);
+        if (weapon != null) Ammo = weapon.magazine;
+        BuildModel();
     }
 
     void OnDestroy()
@@ -129,33 +104,45 @@ public class PlayerPistol : MonoBehaviour
 
     void OnDisable()
     {
-        for (int i = shots.Count - 1; i >= 0; i--) Free(shots[i]);
-        shots.Clear();
         target = null;
         aim = 0f;
         if (ring != null) ring.gameObject.SetActive(false);
         if (flash != null) flash.enabled = false;
     }
 
-    /// Called by PlayerTools: the pistol is / is not the tool in the hands.
+    /// Called by PlayerTools: the weapon is / is not the tool in the hands.
     public void SetInHands(bool on)
     {
         InHands = on;
-        bool show = on && owned;
-        if (model != null && model.gameObject.activeSelf != show) model.gameObject.SetActive(show);
+        bool show = on && weapon != null;
+        if (holder != null && holder.gameObject.activeSelf != show) holder.gameObject.SetActive(show);
+    }
+
+    /// Gives him this weapon with a full magazine. Returns the one he had (null = none).
+    public WeaponDef Equip(WeaponDef def)
+    {
+        var old = weapon;
+        weapon = def;
+        Reloading = false;
+        cooldown = 0.25f;
+        kick = 0f;
+        Ammo = def != null ? def.magazine : 0;
+        BuildModel();
+        OnWeaponChanged?.Invoke();
+        return old;
     }
 
     /// Reload by hand (tap on the HUD tile). Does nothing with a full magazine.
     public void Reload()
     {
-        if (owned && !Reloading && Ammo < magazine) StartReload();
+        if (weapon != null && !Reloading && Ammo < weapon.magazine) StartReload();
     }
 
     /// Debug / upgrades: a full magazine right now.
     public void Refill()
     {
         Reloading = false;
-        Ammo = magazine;
+        Ammo = Magazine;
     }
 
     void StartReload()
@@ -165,29 +152,54 @@ public class PlayerPistol : MonoBehaviour
         OnReloadStart?.Invoke();
     }
 
+    /// The gun in the hand: a holder whose origin is the grip, with the weapon's model and a muzzle point in it.
+    void BuildModel()
+    {
+        if (holder != null) Destroy(holder.gameObject);
+        holder = null;
+        muzzle = null;
+        if (weapon == null || weapon.model == null) return;
+
+        holder = new GameObject("Weapon (" + weapon.displayName + ")").transform;
+        float s = weapon.modelScale;
+        var m = Instantiate(weapon.model, holder);
+        m.name = "Model";
+        m.transform.localRotation = Quaternion.identity;
+        m.transform.localScale = weapon.model.transform.localScale * s;
+        m.transform.localPosition = -weapon.grip * s;
+        foreach (var c in m.GetComponentsInChildren<Collider>(true)) Destroy(c);
+        muzzle = new GameObject("Muzzle").transform;
+        muzzle.SetParent(holder, false);
+        muzzle.localPosition = (weapon.muzzle - weapon.grip) * s;
+
+        Transform arm = rightForearm != null ? rightForearm : transform;
+        holder.position = hand != null ? hand.position : arm.position;
+        holder.SetParent(arm, true);   // the arm bones are scaled; this keeps the gun's world size
+        holder.gameObject.SetActive(InHands);
+    }
+
     void Update()
     {
         float dt = Time.deltaTime;
         if (cooldown > 0f) cooldown -= dt;
-        if (kick > 0f) kick = Mathf.MoveTowards(kick, 0f, recoilTime > 0f ? dt / recoilTime : 1f);
+        if (kick > 0f) kick = Mathf.MoveTowards(kick, 0f, weapon != null && weapon.recoilTime > 0f ? dt / weapon.recoilTime : 1f);
         if (ringPunch > 0f) ringPunch = Mathf.MoveTowards(ringPunch, 0f, dt * 6f);
         if (flash != null && flash.enabled)
         {
             flashT -= dt;
             if (flashT <= 0f) flash.enabled = false;
-            else flash.intensity = flashLight * (flashT / 0.07f);
+            else flash.intensity = (weapon != null ? weapon.flashLight : 1f) * (flashT / 0.07f);
         }
-        UpdateShots(dt);
 
-        if (!owned) { target = null; aim = 0f; return; }
+        if (weapon == null) { target = null; aim = 0f; return; }
 
         if (Reloading)
         {
             reloadT += dt;
-            if (reloadT >= reloadTime)
+            if (reloadT >= weapon.reloadTime)
             {
                 Reloading = false;
-                Ammo = magazine;
+                Ammo = weapon.magazine;
                 OnReloadDone?.Invoke();
             }
         }
@@ -198,7 +210,7 @@ public class PlayerPistol : MonoBehaviour
 
         // empty = reload at once; half empty = reload when there is nothing to shoot at
         idleT = target == null ? idleT + dt : 0f;
-        if (!Reloading && Ammo < magazine && (Ammo <= 0 || idleT >= idleReloadDelay)) StartReload();
+        if (!Reloading && Ammo < weapon.magazine && (Ammo <= 0 || idleT >= idleReloadDelay)) StartReload();
 
         bool aiming = target != null && (!moving || fireWhileMoving);
         aim = Mathf.MoveTowards(aim, aiming ? 1f : 0f, aimTime > 0f ? dt / aimTime : 1f);
@@ -223,8 +235,8 @@ public class PlayerPistol : MonoBehaviour
     {
         Vector3 eye = transform.position + Vector3.up * 1.3f;
         // keep the current one a little past the range, so it doesn't flicker at the edge
-        if (Targeting.StillValid(target, transform.position, range + 0.6f, lineOfSight, eye) && Seen(target)) return target;
-        return Targeting.FindNearest(Team.Enemy, transform.position, range, Seen, lineOfSight, true, eye);
+        if (Targeting.StillValid(target, transform.position, weapon.range + 0.6f, lineOfSight, eye) && Seen(target)) return target;
+        return Targeting.FindNearest(Team.Enemy, transform.position, weapon.range, Seen, lineOfSight, true, eye);
     }
 
     /// Only enemies the player can see right now (not ones hidden in the fog at the edge of his sight).
@@ -236,30 +248,41 @@ public class PlayerPistol : MonoBehaviour
 
     void Fire()
     {
+        var def = weapon;
         Ammo--;
-        cooldown = fireInterval;
+        cooldown = def.fireInterval;
         kick = 1f;
 
         Vector3 from = muzzle != null ? muzzle.position : transform.position + Vector3.up * 1.3f + transform.forward * 0.7f;
         Vector3 dir = aimPoint - from;
         dir = dir.sqrMagnitude > 0.0001f ? dir.normalized : transform.forward;
 
-        var s = new Shot { line = GetLine(), start = from, head = from, to = aimPoint, dir = dir, target = target };
-        s.line.SetPosition(0, from);
-        s.line.SetPosition(1, from);
-        shots.Add(s);
+        int n = Mathf.Max(1, def.pellets);
+        for (int i = 0; i < n; i++)
+        {
+            Vector3 d = dir;
+            if (def.spread > 0f)
+            {
+                // several pellets: one per slice of the fan, so the pattern is even; a single shot: anywhere in it
+                float a = n > 1 ? Mathf.Lerp(-0.5f, 0.5f, (i + UnityEngine.Random.value) / n) : UnityEngine.Random.Range(-0.5f, 0.5f);
+                d = Quaternion.AngleAxis(a * def.spread, Vector3.up) * dir;
+            }
+            WeaponProjectile.Fire(def, this, from, d, n == 1 ? target : null);
+        }
 
-        CombatFX.Muzzle(from, dir, color);
-        CameraShake.Kick(shotShake);
-        if (flashLight > 0f)
+        if (def.muzzleFx != null) FxPool.Play(def.muzzleFx, from, Quaternion.LookRotation(dir), def.muzzleScale, 1f);
+        else CombatFX.Muzzle(from, dir, def.color);
+        CameraShake.Kick(def.shotShake);
+        if (def.flashLight > 0f)
         {
             EnsureFx();
+            flash.color = Color.Lerp(def.color, Color.white, 0.3f);
             flash.transform.position = from + dir * 0.3f + Vector3.up * 0.2f;
-            flash.intensity = flashLight;
+            flash.intensity = def.flashLight;
             flash.enabled = true;
             flashT = 0.07f;
         }
-        if (casings)
+        if (def.casings)
         {
             EnsureFx();
             var ep = new ParticleSystem.EmitParams
@@ -274,102 +297,41 @@ public class PlayerPistol : MonoBehaviour
         if (Ammo <= 0) StartReload();
     }
 
-    // ------------------------------------------------------------------ bullets
-
-    void UpdateShots(float dt)
+    /// One hit of a weapon on an enemy, with everything that makes it feel like a hit. Returns true if it killed it.
+    /// point = where it lands, dir = the way the projectile flew, from = where it was fired from.
+    public bool DealHit(WeaponDef def, Health h, float damage, Vector3 point, Vector3 dir, Vector3 from, float knock)
     {
-        for (int i = shots.Count - 1; i >= 0; i--)
-        {
-            var s = shots[i];
-            if (s.target != null && s.target.isActiveAndEnabled && !s.target.IsDead) s.to = s.target.AimPoint;
-            Vector3 d = s.to - s.head;
-            float dist = d.magnitude;
-            float step = bulletSpeed * dt;
-            if (dist <= step || dist < 0.01f)
-            {
-                s.head = s.to;
-                shots.RemoveAt(i);
-                Free(s);
-                Impact(s);
-                continue;
-            }
-            s.dir = d / dist;
-            s.head += s.dir * step;
-            s.line.SetPosition(0, s.head - s.dir * Mathf.Min(tracerLength, Vector3.Distance(s.start, s.head)));
-            s.line.SetPosition(1, s.head);
-        }
-    }
-
-    void Impact(Shot s)
-    {
-        var h = s.target;
-        if (h == null || h.IsDead || !h.isActiveAndEnabled)
-        {
-            // the target died while the bullet was on its way
-            CombatFX.Hit(s.head, -s.dir, color, 0.7f);
-            return;
-        }
-
-        Vector3 flat = s.dir; flat.y = 0f;
+        if (h == null || h.IsDead || !h.isActiveAndEnabled) return false;
+        Vector3 flat = dir; flat.y = 0f;
         flat = flat.sqrMagnitude > 0.0001f ? flat.normalized : transform.forward;
         bool killed;
-        HitKnockScale = knockback;
+        HitKnockScale = knock;
         try
         {
             var mt = h.GetComponent<MeleeTarget>();
             if (mt != null && mt.Alive)
             {
                 // flash, squash, sparks and the damage number come from the target itself
-                killed = mt.TakeHit(damage, mt.HitPoint(s.start), flat, gameObject);
-                CombatFX.Hit(s.head, -s.dir, color, 0.6f);
+                killed = mt.TakeHit(damage, mt.HitPoint(from), flat, gameObject);
             }
             else
             {
                 float done = h.Damage(damage, gameObject);
                 killed = h.IsDead;
                 if (done > 0f) DamageNumber.Spawn(h.transform.position + Vector3.up * (h.barHeight + 0.4f), done, killed);
-                CombatFX.Hit(s.head, -s.dir, color, killed ? 1.5f : 1f);
             }
         }
         finally { HitKnockScale = 1f; }
 
         if (h == target) ringPunch = 1f;
-        CameraShake.Kick(killed ? killShake : hitShake);
-        OnHit?.Invoke(killed);
-    }
-
-    LineRenderer GetLine()
-    {
-        LineRenderer l;
-        if (linePool.Count > 0) l = linePool.Pop();
-        else
+        // one camera kick per frame, however many pellets land in it (the kill always kicks)
+        if (killed || Time.frameCount != lastKickFrame)
         {
-            EnsureFx();
-            var go = new GameObject("Tracer");
-            go.transform.SetParent(fxRoot, false);
-            l = go.AddComponent<LineRenderer>();
-            l.sharedMaterial = Resources.Load<Material>("FX/ParticleSoft");
-            l.useWorldSpace = true;
-            l.positionCount = 2;
-            l.numCapVertices = 3;
-            l.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            l.receiveShadows = false;
-            l.widthCurve = new AnimationCurve(new Keyframe(0f, 0.15f), new Keyframe(1f, 1f));
+            lastKickFrame = Time.frameCount;
+            CameraShake.Kick(killed ? def.killShake : def.hitShake);
         }
-        l.widthMultiplier = tracerWidth;
-        var g = new Gradient();
-        g.SetKeys(new[] { new GradientColorKey(color, 0f), new GradientColorKey(Color.Lerp(color, Color.white, 0.7f), 1f) },
-                  new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 1f) });
-        l.colorGradient = g;
-        l.gameObject.SetActive(true);
-        return l;
-    }
-
-    void Free(Shot s)
-    {
-        if (s.line == null) return;
-        s.line.gameObject.SetActive(false);
-        linePool.Push(s.line);
+        OnHit?.Invoke(killed);
+        return killed;
     }
 
     // ------------------------------------------------------------------ pose: after the Animator
@@ -377,14 +339,15 @@ public class PlayerPistol : MonoBehaviour
     void LateUpdate()
     {
         UpdateRing();
-        if (model == null || !model.gameObject.activeInHierarchy) return;
+        if (holder == null || !holder.gameObject.activeInHierarchy) return;
 
+        float k = kick * kick;
         if (aim > 0f && rightUpperArm != null)
         {
             Point(rightUpperArm, aimPoint, aim);
             if (rightForearm != null) Point(rightForearm, aimPoint, aim);
             // recoil: the whole arm snaps up, then settles
-            if (kick > 0f) rightUpperArm.rotation = Quaternion.AngleAxis(-recoilAngle * kick * kick * aim, transform.right) * rightUpperArm.rotation;
+            if (k > 0f) rightUpperArm.rotation = Quaternion.AngleAxis(-weapon.recoilAngle * k * aim, transform.right) * rightUpperArm.rotation;
         }
 
         // the gun sits in the hand with its barrel along the forearm and its top up
@@ -396,12 +359,12 @@ public class PlayerPistol : MonoBehaviour
         if (Reloading)
         {
             // reload: the gun spins once around in the hand
-            float k = ReloadProgress;
-            k = k * k * (3f - 2f * k);
-            rot *= Quaternion.AngleAxis(-360f * k, Vector3.right);
+            float r = ReloadProgress;
+            r = r * r * (3f - 2f * r);
+            rot *= Quaternion.AngleAxis(-360f * r, Vector3.right);
         }
-        model.rotation = rot;
-        model.position = (hand != null ? hand.position : arm.position) - barrel * (recoilBack * kick * kick);
+        holder.rotation = rot;
+        holder.position = (hand != null ? hand.position : arm.position) - barrel * (weapon.recoilBack * k);
     }
 
     /// Turns a bone so its Y axis (which runs along the arm) points at the point.
@@ -437,9 +400,9 @@ public class PlayerPistol : MonoBehaviour
     void EnsureFx()
     {
         if (fxRoot != null) return;
-        fxRoot = new GameObject("Pistol FX").transform;
+        fxRoot = new GameObject("Weapon FX").transform;
 
-        // target ring: a dashed circle lying on the ground
+        // target ring: a circle lying on the ground
         var rgo = new GameObject("Target Ring");
         rgo.transform.SetParent(fxRoot, false);
         ring = rgo.AddComponent<LineRenderer>();
@@ -465,7 +428,6 @@ public class PlayerPistol : MonoBehaviour
         lgo.transform.SetParent(fxRoot, false);
         flash = lgo.AddComponent<Light>();
         flash.type = LightType.Point;
-        flash.color = Color.Lerp(color, Color.white, 0.3f);
         flash.range = 5f;
         flash.shadows = LightShadows.None;
         flash.enabled = false;
@@ -484,7 +446,7 @@ public class PlayerPistol : MonoBehaviour
         m.startSize = 0.07f;
         m.startColor = new Color(0.95f, 0.72f, 0.25f);
         m.gravityModifier = 2.6f;
-        m.maxParticles = 32;
+        m.maxParticles = 48;
         m.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
         var em = casingFx.emission; em.enabled = false;
         var sh = casingFx.shape; sh.enabled = false;
@@ -501,7 +463,8 @@ public class PlayerPistol : MonoBehaviour
 
     void OnDrawGizmosSelected()
     {
+        if (weapon == null) return;
         Gizmos.color = new Color(1f, 0.6f, 0.2f);
-        Gizmos.DrawWireSphere(transform.position, range);
+        Gizmos.DrawWireSphere(transform.position, weapon.range);
     }
 }

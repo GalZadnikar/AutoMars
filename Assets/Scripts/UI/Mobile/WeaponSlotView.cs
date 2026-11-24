@@ -1,98 +1,108 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-/// The weapon tile in the HUD (left side, under the tools): the gun's icon with one pip per bullet in the magazine.
-///  - A shot: its pip goes dark with a small drop, the icon kicks.
-///  - Reload: a dark clock-wipe runs over the icon and the pips come back one by one; a flash when it is done.
-///  - The last bullets turn red. Yellow frame while the gun is in the player's hands.
-///  - Tap = reload now.
-/// Hidden while the player doesn't own the weapon.
+/// The weapon tile in the HUD (left side, under the tools): the icon of the weapon the player holds and its
+/// ammo as a number, "4/6".
+///  - A shot: the number jumps, the icon kicks. The last third of the magazine is red.
+///  - Reload: a dark clock-wipe runs over the icon and the number counts back up; a flash when it is done.
+///  - A new weapon (pickup): the icon changes and the tile pops.
+///  - Yellow frame while the weapon is in the player's hands. Tap = reload now.
+/// Hidden while the player has no weapon.
 public class WeaponSlotView : MonoBehaviour
 {
     public Image icon;
-    [Tooltip("One per bullet, in the order they are fired (the last one is used first)")]
-    public Image[] pips;
+    [Tooltip("\"4/6\"")]
+    public TMP_Text ammoText;
     [Tooltip("Radial wipe over the tile during a reload")]
     public Image reloadFill;
-    [Tooltip("White flash when the reload is done")]
+    [Tooltip("White flash when the reload is done or the weapon changes")]
     public Image flash;
     public GameObject activeFrame;
     public Button button;
     public CanvasGroup group;
 
-    public Color pipFull = new Color(1f, 0.84f, 0.3f);
-    public Color pipLow = new Color(1f, 0.38f, 0.28f);
-    public Color pipEmpty = new Color(0f, 0f, 0f, 0.5f);
-    [Tooltip("Pips turn red when this many bullets (or fewer) are left")]
-    public int lowAmmo = 2;
+    public Color ammoColor = Color.white;
+    public Color lowColor = new Color(1f, 0.38f, 0.28f);
+    public Color reloadColor = new Color(1f, 0.84f, 0.3f);
+    [Tooltip("The number turns red when this part of the magazine (or less) is left")]
+    [Range(0f, 1f)] public float lowAmmo = 0.34f;
 
-    PlayerPistol pistol;
+    PlayerWeapon pw;
     PlayerTools tools;
-    bool[] lit;
-    float[] punch;
-    float iconKick, flashT;
+    WeaponDef shownWeapon;
+    int shownAmmo = -1, shownMag = -1;
+    float iconKick, textPunch, flashT;
     bool wasReloading;
     Vector2 iconPos;
 
     void Awake()
     {
-        if (button != null) button.onClick.AddListener(() => { if (pistol != null) pistol.Reload(); });
+        if (button != null) button.onClick.AddListener(() => { if (pw != null) pw.Reload(); });
         if (icon != null) iconPos = icon.rectTransform.anchoredPosition;
-        int n = pips != null ? pips.Length : 0;
-        lit = new bool[n];
-        punch = new float[n];
-        for (int i = 0; i < n; i++) lit[i] = true;
         if (flash != null) flash.gameObject.SetActive(false);
         if (reloadFill != null) reloadFill.gameObject.SetActive(false);
     }
 
     void Update()
     {
-        if (pistol == null)
+        if (pw == null)
         {
-            pistol = PlayerPistol.Instance;
-            if (pistol != null) tools = pistol.GetComponent<PlayerTools>();
+            pw = PlayerWeapon.Instance;
+            if (pw != null) tools = pw.GetComponent<PlayerTools>();
         }
-        bool owned = pistol != null && pistol.owned;
+        var def = pw != null ? pw.weapon : null;
+        bool owned = def != null;
         if (group != null)
         {
             group.alpha = owned ? 1f : 0f;
             group.blocksRaycasts = owned;
         }
-        if (!owned) return;
+        if (!owned) { shownWeapon = null; return; }
 
         float dt = Time.unscaledDeltaTime;
-        int n = pips != null ? pips.Length : 0;
-        bool reloading = pistol.Reloading;
-        // during a reload the bullets come back one by one
-        int shown = reloading ? Mathf.FloorToInt(pistol.ReloadProgress * pistol.magazine) : pistol.Ammo;
-        if (n > 0 && pistol.magazine != n) shown = Mathf.RoundToInt(shown * (float)n / pistol.magazine);
-        bool low = !reloading && pistol.Ammo <= lowAmmo;
+        bool reloading = pw.Reloading;
 
-        for (int i = 0; i < n; i++)
+        if (def != shownWeapon)
         {
-            var p = pips[i];
-            if (p == null) continue;
-            bool on = i < shown;
-            if (on != lit[i])
+            bool first = shownWeapon == null;
+            shownWeapon = def;
+            shownAmmo = -1;
+            if (icon != null)
             {
-                lit[i] = on;
-                punch[i] = 1f;
-                if (!on && !reloading) iconKick = 1f;   // a shot
+                icon.sprite = def.icon;
+                icon.enabled = def.icon != null;
             }
-            if (punch[i] > 0f) punch[i] = Mathf.MoveTowards(punch[i], 0f, dt * 7f);
-            p.color = on ? (low ? pipLow : pipFull) : pipEmpty;
-            // a loaded bullet pops in bigger, a fired one drops smaller, both settle to 1
-            float s = on ? 1f + 0.7f * punch[i] : 1f - 0.45f * punch[i];
-            p.rectTransform.localScale = new Vector3(s, s, 1f);
+            if (!first) flashT = 1f;   // a new weapon: pop
+        }
+
+        // during a reload the number counts back up
+        int ammo = reloading ? Mathf.FloorToInt(pw.ReloadProgress * def.magazine) : pw.Ammo;
+        if (ammo != shownAmmo || def.magazine != shownMag)
+        {
+            if (shownAmmo >= 0)
+            {
+                textPunch = 1f;
+                if (ammo < shownAmmo && !reloading) iconKick = 1f;   // a shot
+            }
+            shownAmmo = ammo;
+            shownMag = def.magazine;
+            if (ammoText != null) ammoText.text = ammo + "/" + def.magazine;
+        }
+        if (ammoText != null)
+        {
+            if (textPunch > 0f) textPunch = Mathf.MoveTowards(textPunch, 0f, dt * 7f);
+            float s = 1f + 0.35f * textPunch * textPunch;
+            ammoText.rectTransform.localScale = new Vector3(s, s, 1f);
+            ammoText.color = reloading ? reloadColor : (pw.Ammo <= Mathf.Max(1f, def.magazine * lowAmmo) ? lowColor : ammoColor);
         }
 
         if (icon != null)
         {
             if (iconKick > 0f) iconKick = Mathf.MoveTowards(iconKick, 0f, dt * 9f);
             float k = iconKick * iconKick;
-            icon.rectTransform.anchoredPosition = iconPos + new Vector2(-10f, 6f) * k;
-            icon.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 14f * k);
+            icon.rectTransform.anchoredPosition = iconPos + new Vector2(10f, 6f) * k;
+            icon.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -14f * k);
             float a = reloading ? 0.55f : 1f;
             if (!Mathf.Approximately(icon.color.a, a)) icon.color = new Color(1f, 1f, 1f, a);
         }
@@ -100,7 +110,7 @@ public class WeaponSlotView : MonoBehaviour
         if (reloadFill != null)
         {
             if (reloadFill.gameObject.activeSelf != reloading) reloadFill.gameObject.SetActive(reloading);
-            if (reloading) reloadFill.fillAmount = 1f - pistol.ReloadProgress;
+            if (reloading) reloadFill.fillAmount = 1f - pw.ReloadProgress;
         }
 
         if (wasReloading && !reloading) flashT = 1f;   // reload done
@@ -120,7 +130,7 @@ public class WeaponSlotView : MonoBehaviour
 
         if (activeFrame != null)
         {
-            bool inHands = tools != null ? tools.tool == PlayerTool.Pistol : pistol.InHands;
+            bool inHands = tools != null ? tools.tool == PlayerTool.Weapon : pw.InHands;
             if (activeFrame.activeSelf != inHands) activeFrame.SetActive(inHands);
         }
     }

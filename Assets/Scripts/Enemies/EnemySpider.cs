@@ -378,7 +378,7 @@ public class EnemySpider : MonoBehaviour
         Vector3 dir = source != null ? Flat(transform.position - source.transform.position) : -transform.forward;
         dir = dir.sqrMagnitude > 0.0001f ? dir.normalized : -transform.forward;
         bool windingUp = Current == State.Attack && !struck;
-        knock = dir * knockback * (windingUp ? attackKnockback : 1f) * PlayerPistol.HitKnockScale;   // a bullet pushes less than a pickaxe blow
+        knock = dir * knockback * (windingUp ? attackKnockback : 1f) * PlayerWeapon.HitKnockScale;   // a bullet pushes less than a pickaxe blow
         CombatFX.Hit(Health.AimPoint - dir * 0.4f, -dir + Vector3.up * 0.6f, gooColor, 1.1f);
 
         // whoever hit it becomes the target

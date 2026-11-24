@@ -78,46 +78,127 @@ public static class BatteryBuilder
         var old = GameObject.Find("Batteries");
         if (old != null) Object.DestroyImmediate(old);
         var parent = new GameObject("Batteries").transform;
-        var white = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/HomeWhite.mat");
-        var ringMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/ZoneRing.mat");
-
         int n = 0;
         foreach (var s in Spots)
         {
             var item = items[(int)s.r];
-            var mat = LitMaterial("Battery_" + s.r, item.Color, item.Color * (s.r >= Rarity.Rare ? 1.4f : 0.6f));
-
-            var go = new GameObject(item.displayName + " " + (++n));
-            go.transform.SetParent(parent, false);
-            go.transform.position = new Vector3(s.x, GroundUtil.Height(new Vector3(s.x, 0f, s.z), 0f), s.z);
-            var bp = go.AddComponent<BatteryPickup>();
-            bp.battery = item;
-
-            var visual = new GameObject("Visual").transform;
-            visual.SetParent(go.transform, false);
-            visual.localPosition = new Vector3(0f, 1.0f, 0f);
-            Prim(PrimitiveType.Cylinder, "Body", visual, Vector3.zero, new Vector3(0.6f, 0.55f, 0.6f), mat);
-            Prim(PrimitiveType.Cylinder, "Cap", visual, new Vector3(0f, 0.62f, 0f), new Vector3(0.28f, 0.08f, 0.28f), white);
-            Prim(PrimitiveType.Cylinder, "Band", visual, new Vector3(0f, 0.2f, 0f), new Vector3(0.63f, 0.06f, 0.63f), white);
-            bp.visual = visual;
-
-            if (s.r >= Rarity.Rare)   // loot beam
-                bp.beam = Prim(PrimitiveType.Cylinder, "Beam", go.transform, new Vector3(0f, 3f, 0f), new Vector3(0.12f, 3f, 0.12f), mat);
-
-            var ringGo = new GameObject("Ring");
-            ringGo.transform.SetParent(go.transform, false);
-            ringGo.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
-            var lr = ringGo.AddComponent<LineRenderer>();
-            lr.sharedMaterial = ringMat;
-            lr.alignment = LineAlignment.TransformZ;
-            var ring = ringGo.AddComponent<GroundRing>();
-            ring.radius = 1.3f;
-            ring.idleColor = new Color(item.Color.r, item.Color.g, item.Color.b, 0.8f);
-            ring.Rebuild();
-            bp.ring = ringGo;
+            var pos = new Vector3(s.x, GroundUtil.Height(new Vector3(s.x, 0f, s.z), 0f), s.z);
+            CreatePickup(item, parent, pos, item.displayName + " " + (++n));
         }
     }
 
+    /// One battery pickup: the battery model in its rarity colour, a ground ring and (rare and better) a loot beam.
+    public static GameObject CreatePickup(BatteryItem item, Transform parent, Vector3 pos, string name)
+    {
+        var ringMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/ZoneRing.mat");
+        var mat = LitMaterial("Battery_" + item.rarity, item.Color, item.Color * (item.rarity >= Rarity.Rare ? 1.4f : 0.6f));
+
+        var go = new GameObject(name);
+        if (parent != null) go.transform.SetParent(parent, false);
+        go.transform.position = pos;
+        var bp = go.AddComponent<BatteryPickup>();
+        bp.battery = item;
+
+        var visual = new GameObject("Visual").transform;
+        visual.SetParent(go.transform, false);
+        visual.localPosition = new Vector3(0f, 1.0f, 0f);
+        BuildVisual(visual, item.rarity);
+        bp.visual = visual;
+
+        if (item.rarity >= Rarity.Rare)   // loot beam
+            bp.beam = Prim(PrimitiveType.Cylinder, "Beam", go.transform, new Vector3(0f, 3f, 0f), new Vector3(0.12f, 3f, 0.12f), mat);
+
+        var ringGo = new GameObject("Ring");
+        ringGo.transform.SetParent(go.transform, false);
+        ringGo.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+        var lr = ringGo.AddComponent<LineRenderer>();
+        lr.sharedMaterial = ringMat;
+        lr.alignment = LineAlignment.TransformZ;
+        var ring = ringGo.AddComponent<GroundRing>();
+        ring.radius = 1.3f;
+        ring.idleColor = new Color(item.Color.r, item.Color.g, item.Color.b, 0.8f);
+        ring.Rebuild();
+        bp.ring = ringGo;
+        return go;
+    }
+
+    const string BarrelPrefab = "Assets/WONILMAX/Sci-Fi Barrel Pack/Prefabs/Sci-Fi Barrel_Grey.prefab";
+    const string BarrelMaterial = "Assets/WONILMAX/Sci-Fi Barrel Pack/Materials/Sci-Fi Barrel Grey.mat";
+    const string ModelMatFolder = "Assets/Materials/Batteries";
+    const string PickupPrefabFolder = "Assets/Prefabs/Batteries";
+
+    /// The battery model (Sci-Fi Barrel pack) under a pickup's "Visual", tinted in the rarity's colour.
+    /// Replaces whatever model was there. The Visual's pivot is the middle of the battery (it spins and bobs around it).
+    public static void BuildVisual(Transform visual, Rarity rarity)
+    {
+        for (int i = visual.childCount - 1; i >= 0; i--) Object.DestroyImmediate(visual.GetChild(i).gameObject);
+        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(BarrelPrefab);
+        if (prefab == null) { Debug.LogError("Batteries: model not found: " + BarrelPrefab); return; }
+        var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab, visual);
+        go.name = "Model";
+        go.transform.localRotation = Quaternion.identity;
+        go.transform.localScale = Vector3.one * 0.9f;
+        go.transform.localPosition = new Vector3(0f, -0.55f, 0f);
+        var mat = ModelMaterial(rarity);
+        foreach (var r in go.GetComponentsInChildren<MeshRenderer>(true))
+        {
+            r.sharedMaterial = mat;
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
+        foreach (var c in go.GetComponentsInChildren<Collider>(true)) Object.DestroyImmediate(c);
+    }
+
+    /// One material per rarity: a copy of the pack's grey battery, tinted and glowing in the rarity colour
+    /// (the same colours as the battery cards in the UI), so all five share one set of textures.
+    static Material ModelMaterial(Rarity rarity)
+    {
+        if (!AssetDatabase.IsValidFolder(ModelMatFolder)) AssetDatabase.CreateFolder("Assets/Materials", "Batteries");
+        string path = ModelMatFolder + "/BatteryModel_" + rarity + ".mat";
+        var m = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (m == null)
+        {
+            m = new Material(AssetDatabase.LoadAssetAtPath<Material>(BarrelMaterial));
+            AssetDatabase.CreateAsset(m, path);
+        }
+        Color c = BatteryItem.RarityColor(rarity);
+        // the pack's grey texture is dark, so the tint is pushed above 1 to get a clear colour
+        Color tint = Color.Lerp(Color.white, c, 0.8f) * 1.8f;
+        tint.a = 1f;
+        m.SetColor("_BaseColor", rarity == Rarity.Common ? Color.white : tint);
+        m.EnableKeyword("_EMISSION");
+        m.SetColor("_EmissionColor", c * (rarity >= Rarity.Rare ? 2.2f : 1.2f));
+        m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+        EditorUtility.SetDirty(m);
+        return m;
+    }
+
+    /// Gives every battery pickup in the open scene the battery model, and makes one pickup prefab per rarity
+    /// (Assets/Prefabs/Batteries) to drag into a scene.
+    [MenuItem("Tools/Trash Game/6b. Batteries (New Model In This Scene + Pickup Prefabs)")]
+    public static void ApplyModel()
+    {
+        int n = 0;
+        foreach (var bp in Object.FindObjectsByType<BatteryPickup>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (bp.battery == null || bp.visual == null || bp.visual == bp.transform) continue;
+            BuildVisual(bp.visual, bp.battery.rarity);
+            EditorUtility.SetDirty(bp);
+            n++;
+        }
+        if (!AssetDatabase.IsValidFolder("Assets/Prefabs")) AssetDatabase.CreateFolder("Assets", "Prefabs");
+        if (!AssetDatabase.IsValidFolder(PickupPrefabFolder)) AssetDatabase.CreateFolder("Assets/Prefabs", "Batteries");
+        int made = 0;
+        foreach (var item in BatteryItem.LoadAll())
+        {
+            var go = CreatePickup(item, null, Vector3.zero, "Battery Pickup (" + item.rarity + ")");
+            PrefabUtility.SaveAsPrefabAsset(go, PickupPrefabFolder + "/Battery Pickup (" + item.rarity + ").prefab");
+            Object.DestroyImmediate(go);
+            made++;
+        }
+        AssetDatabase.SaveAssets();
+        if (n > 0) EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+        Debug.Log("Batteries: new model on " + n + " pickups in this scene, " + made + " pickup prefabs in " + PickupPrefabFolder + ".");
+    }
     static GameObject Prim(PrimitiveType type, string name, Transform parent, Vector3 pos, Vector3 scale, Material mat)
     {
         var go = GameObject.CreatePrimitive(type);

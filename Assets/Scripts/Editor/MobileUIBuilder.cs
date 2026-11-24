@@ -106,7 +106,7 @@ public static class MobileUIBuilder
         Column(toolCol, 18f, TextAnchor.UpperLeft);
         ToolSlot(toolCol, ToolKind.Shovel, shovelIcon, 156f, true);
         ToolSlot(toolCol, ToolKind.Pickaxe, pickIcon, 156f, true);
-        WeaponSlot(toolCol, RenderPistolIcon(false), 156f);
+        WeaponSlot(toolCol, 156f);
 
         // ---------------------------------------------------------------- right: inventory button
         var inv = Img("InventoryButton", safe, S("Button/Button_Circle_01_Purple"), Color.white, true);
@@ -310,10 +310,11 @@ public static class MobileUIBuilder
         return view;
     }
 
-    /// The weapon tile: the gun's icon, one pip per bullet and the reload wipe (see WeaponSlotView).
-    static WeaponSlotView WeaponSlot(Transform parent, Sprite icon, float size)
+    /// The weapon tile: the icon of the weapon in the slot, its ammo as "4/6" and the reload wipe (see WeaponSlotView).
+    static WeaponSlotView WeaponSlot(Transform parent, float size)
     {
-        const int Bullets = 6;
+        var pw = Object.FindFirstObjectByType<PlayerWeapon>(FindObjectsInactive.Include);
+        Sprite icon = pw != null && pw.weapon != null ? pw.weapon.icon : null;
         var bg = Img("Weapon Slot", parent, S("Frame/ItemFrame_02_Bg_Single_Blue"), new Color(1f, 0.8f, 0.78f), true);
         bg.rectTransform.sizeDelta = new Vector2(size, size);
         var view = bg.gameObject.AddComponent<WeaponSlotView>();
@@ -324,7 +325,7 @@ public static class MobileUIBuilder
         Stretch(focus.rectTransform, -4f);
         view.activeFrame = focus.gameObject;
         view.icon = Img("Icon", bg.transform, icon, Color.white);
-        Stretch(view.icon.rectTransform, size * 0.1f, size * 0.22f, size * 0.1f, size * 0.05f);
+        Stretch(view.icon.rectTransform, size * 0.07f, size * 0.24f, size * 0.07f, size * 0.03f);
         view.icon.preserveAspect = true;
 
         // reload: a dark wipe that runs around the tile and uncovers the icon
@@ -336,20 +337,9 @@ public static class MobileUIBuilder
         wipe.fillClockwise = false;
         view.reloadFill = wipe;
 
-        // one pip per bullet along the bottom (drawn over the wipe, so they stay readable while reloading)
-        var dot = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Knob.psd");
-        var row = Rect("Pips", bg.transform);
-        Place(row, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, size * 0.085f), new Vector2(size * 0.84f, size * 0.18f));
-        float w = size * 0.1f, h = size * 0.15f, step = size * 0.13f;
-        view.pips = new Image[Bullets];
-        for (int i = 0; i < Bullets; i++)
-        {
-            var back = Img("Pip " + (i + 1), row, dot, new Color(0.1f, 0.07f, 0.13f, 0.95f));
-            Place(back.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2((i - (Bullets - 1) * 0.5f) * step, 0f), new Vector2(w + 6f, h + 6f));
-            var pip = Img("Bullet", back.transform, dot, new Color(1f, 0.84f, 0.3f));
-            Place(pip.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(w, h));
-            view.pips[i] = pip;
-        }
+        // ammo as a number along the bottom (drawn over the wipe, so it stays readable while reloading)
+        view.ammoText = Txt("Ammo", bg.transform, "6/6", size * 0.25f, Color.white, TextAlignmentOptions.Center);
+        Place(view.ammoText.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, size * 0.05f), new Vector2(size, size * 0.3f));
 
         var flash = Img("Flash", bg.transform, bg.sprite, new Color(1f, 1f, 1f, 0f));
         Stretch(flash.rectTransform, 2f);
@@ -369,21 +359,17 @@ public static class MobileUIBuilder
         LoadFont();
         var old = col.Find("Weapon Slot");
         if (old != null) Object.DestroyImmediate(old.gameObject);
-        WeaponSlot(col, RenderPistolIcon(false), 156f);
+        WeaponSlot(col, 156f);
         EditorSceneManager.MarkSceneDirty(canvasGo.scene);
     }
 
-    /// Icon_Pistol.png, rendered from the pistol model on the player (side view, barrel to the upper right).
-    public static Sprite RenderPistolIcon(bool force)
+    /// Renders a tool model (handle along its Y, thin along its X) to a HUD icon and returns the sprite.
+    public static Sprite RenderToolIcon(GameObject source, string path)
     {
         if (!AssetDatabase.IsValidFolder(Out)) AssetDatabase.CreateFolder("Assets/UI", "Mobile");
-        string path = Out + "/Icon_Pistol.png";
-        var pistol = Object.FindFirstObjectByType<PlayerPistol>(FindObjectsInactive.Include);
-        if (pistol != null && pistol.model != null && (force || !File.Exists(path)))
-            RenderModel(pistol.model.gameObject, path, Vector3.left, new Vector3(0f, 1f, 0.4f).normalized);
+        RenderModel(source, path);
         return AssetDatabase.LoadAssetAtPath<Sprite>(path);
     }
-
     static void UpgradeRow(RectTransform panel, ToolKind kind, Sprite icon, Sprite sand, Sprite stone, float y)
     {
         var bg = Img(kind + " Upgrade", panel, S("Frame/BasicFrame_Square_l"), RowCol);

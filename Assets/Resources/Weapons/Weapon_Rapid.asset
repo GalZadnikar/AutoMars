@@ -1,0 +1,49 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 72a2383c281aa454dad8a05407e2934b, type: 3}
+  m_Name: Weapon_Rapid
+  m_EditorClassIdentifier: Assembly-CSharp::WeaponDef
+  displayName: RAPID
+  icon: {fileID: 21300000, guid: 86c17a388b6bb494d9d37dc718b9076f, type: 3}
+  color: {r: 0.45, g: 1, b: 0.55, a: 1}
+  model: {fileID: 919132149155446097, guid: 4f717decbbb9640c686a8b344599faa7, type: 3}
+  modelScale: 1.4
+  grip: {x: 0, y: -0.07310925, z: -0.065021954}
+  muzzle: {x: 0, y: 0.072736464, z: 0.24209075}
+  damage: 2
+  range: 5.5
+  magazine: 20
+  fireInterval: 0.085
+  reloadTime: 1.5
+  pellets: 1
+  spread: 7
+  speed: 34
+  homing: 60
+  radius: 0.15
+  pierce: 0
+  splashRadius: 0
+  splashDamage: 0
+  knockback: 0.1
+  recoilAngle: 9
+  recoilBack: 0.05
+  recoilTime: 0.08
+  shotShake: 0.025
+  hitShake: 0.04
+  killShake: 0.25
+  flashLight: 3
+  casings: 1
+  projectileFx: {fileID: 179904, guid: 714262b891e7afa4ababb41a1f17ebf2, type: 3}
+  projectileScale: 0.5
+  muzzleFx: {fileID: 144156, guid: b812b96d8cdb67b48b7e6da077dbcab2, type: 3}
+  muzzleScale: 0.4
+  impactFx: {fileID: 180838, guid: bfbeddd8307f4e441aa8ae4537bf45ad, type: 3}
+  impactScale: 0.4
