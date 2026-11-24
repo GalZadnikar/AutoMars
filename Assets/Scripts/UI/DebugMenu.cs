@@ -266,6 +266,7 @@ public class DebugMenu : MonoBehaviour
         Btn("SPAWN SCOUT", g, () => SpawnEnemy(false));
         Btn("SPAWN ENEMY DRONE", g, () => SpawnEnemy(true));
         Btn("SPAWN LEECH", g, SpawnLeech);
+        Btn("SPAWN SPIDER", g, SpawnSpider);
         Btn("DROP 5 TRASH", g, () => { var pt = PlayerT(); if (pt != null) LooseTrash.Drop(pt.position + pt.forward * 3f, 5, 1.5f, 0f); });
         Btn("FIRE AT ENEMY", g, FireAtEnemy);
         Btn("KILL ENEMIES", g, KillEnemies, Danger);
@@ -340,6 +341,17 @@ public class DebugMenu : MonoBehaviour
         if (drone) { var d = EnemyDrone.Spawn(pos, pos); d.homeRadius = 0f; d.hideInFog = false; }
         else EnemyScout.Spawn(pos);
         GameToast.Show(drone ? "ENEMY DRONE SPAWNED" : "ENEMY SCOUT SPAWNED", new Color(1f, 0.4f, 0.3f));
+    }
+
+    // a spider 8 m ahead: it notices the player at 9 m, so it comes straight in
+    static void SpawnSpider()
+    {
+        var p = PlayerT();
+        if (p == null) return;
+        Vector3 fwd = p.forward; fwd.y = 0f;
+        if (fwd.sqrMagnitude < 0.01f) fwd = Vector3.forward;
+        var s = EnemySpider.Spawn(p.position + fwd.normalized * 8f);
+        GameToast.Show(s != null ? "SPIDER SPAWNED" : "NO SPIDER PREFAB (Tools > Trash Game > 13. Enemies (Spider Prefab))", new Color(1f, 0.4f, 0.3f));
     }
 
     static readonly ShotSpec debugShot = new ShotSpec { damage = 20f, speed = 24f };

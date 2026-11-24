@@ -37,6 +37,8 @@ public class MeleeTarget : MonoBehaviour
     public int stoneYield;
 
     [Header("Break")]
+    [Tooltip("Off = it doesn't shatter and vanish at 0 HP: another script on the object plays the death (enemies)")]
+    public bool breakOnDeath = true;
     public float breakFXSize = 1.3f;
     [Tooltip("Seconds until it comes back after being destroyed (0 = it stays destroyed)")]
     public float respawnDelay = 2.5f;
@@ -103,6 +105,12 @@ public class MeleeTarget : MonoBehaviour
             float d = (p - from).sqrMagnitude;
             if (d < bestD) { bestD = d; best = p; }
         }
+        if (bestD == float.MaxValue)
+        {
+            // no collider on the visual (creatures): the side of the body that faces the blow
+            Vector3 to = from - Center; to.y = 0f;
+            if (to.sqrMagnitude > 0.0001f) best = Center + to.normalized * radius * 0.8f;
+        }
         return Vector3.Lerp(best, Center, 0.25f);
     }
 
@@ -114,19 +122,35 @@ public class MeleeTarget : MonoBehaviour
         if (done <= 0f) return false;
         DamageNumber.Spawn(transform.position + Vector3.up * (hp.barHeight + 0.4f), done, broken);
         CombatFX.MeleeHit(point, -dir, debrisColor, broken ? fxSize * 1.6f : fxSize);
-        if (broken) return true;
+        if (broken && breakOnDeath) return true;
 
         flashT = flashTime;
         SetFlash(true);
         punching = true;
         punchAge = 0f;
         punchDir = dir;
-        return false;
+        return broken;
+    }
+
+    /// Alive again at full HP (for objects with breakOnDeath off, whose own script decides when).
+    public void Revive()
+    {
+        if (!broken) return;
+        broken = false;
+        hp.HealFull();
+        hp.showBar = barWasShown;
     }
 
     void Break()
     {
         broken = true;
+        if (!breakOnDeath)
+        {
+            // the killing blow still flashes and squashes; the owner script takes it from here
+            barWasShown = hp.showBar;
+            hp.showBar = false;
+            return;
+        }
         SetFlash(false);
         ResetPose();
         CombatFX.Shatter(Center, breakFXSize, debrisColor);

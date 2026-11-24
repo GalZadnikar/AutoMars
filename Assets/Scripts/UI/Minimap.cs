@@ -194,6 +194,7 @@ public class Minimap : MonoBehaviour
         foreach (var c in ChargingStation.All) Ensure(Kind.Charger, c);
         foreach (var e in EnemyScout.All) Ensure(Kind.Enemy, e);
         foreach (var e in EnemyDrone.All) Ensure(Kind.Enemy, e);
+        foreach (var e in EnemySpider.All) Ensure(Kind.Enemy, e);
         foreach (var e in EnemyLeech.All) if (e.Health != null) Ensure(Kind.Enemy, e.Health);   // the head: only while out of the hole
         foreach (var bp in FindObjectsByType<BatteryPickup>(FindObjectsSortMode.None)) Ensure(Kind.Battery, bp);
     }

@@ -41,6 +41,10 @@ public class PlayerMelee : MonoBehaviour
     public float hitStop = 0.05f;
     [Tooltip("Longer freeze on the hit that destroys the target")]
     public float killHitStop = 0.12f;
+    [Tooltip("Camera kick on contact (0 = none)")]
+    public float hitShake = 0.12f;
+    [Tooltip("Camera kick on the hit that destroys the target")]
+    public float killShake = 0.3f;
 
     [Header("Weapon")]
     [Tooltip("End of the weapon: sparks appear where this meets the target")]
@@ -184,6 +188,7 @@ public void MeleeHit()
         }
 
         // one freeze per swing, however many things it hit
+        CameraShake.Kick(killed ? killShake : hitShake);
         float stop = killed ? killHitStop : hitStop;
         if (stop > 0f)
         {

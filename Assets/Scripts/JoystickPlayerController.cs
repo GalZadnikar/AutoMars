@@ -29,6 +29,14 @@ public class JoystickPlayerController : MonoBehaviour
     CharacterController controller;
     Animator anim;
     float verticalVelocity;
+    Vector3 pushVelocity;
+
+    /// Shoves the player (an enemy's blow). velocity in m/s on the ground plane; it fades out in a fraction of a second.
+    public void Push(Vector3 velocity)
+    {
+        velocity.y = 0f;
+        pushVelocity = velocity;
+    }
     static readonly int AnimationPar = Animator.StringToHash("AnimationPar");
 
     void Awake()
@@ -96,6 +104,11 @@ public class JoystickPlayerController : MonoBehaviour
         verticalVelocity -= gravity * Time.deltaTime;
 
         Vector3 velocity = move * moveSpeed * speedMultiplier * toolSpeedMultiplier;
+        if (pushVelocity.sqrMagnitude > 0.0001f)
+        {
+            velocity += pushVelocity;
+            pushVelocity = Vector3.MoveTowards(pushVelocity, Vector3.zero, 22f * Time.deltaTime);
+        }
         velocity.y = verticalVelocity;
         if (PipeTether.Instance != null) velocity = PipeTether.Instance.ConstrainVelocity(transform.position, velocity, Time.deltaTime);   // pipe to the base: can't walk past its end
         controller.Move(velocity * Time.deltaTime);

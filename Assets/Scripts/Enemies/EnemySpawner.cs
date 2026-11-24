@@ -5,7 +5,7 @@ using UnityEngine;
 /// of one kind around it and refills after `respawnTime` seconds once one is killed.
 public class EnemySpawner : MonoBehaviour
 {
-    public enum Kind { Scout, Drone }
+    public enum Kind { Scout, Drone, Spider }
 
     public Kind kind = Kind.Scout;
     public int maxAlive = 2;
@@ -47,6 +47,12 @@ public class EnemySpawner : MonoBehaviour
         Vector3 pos = transform.position + new Vector3(r.x, 0f, r.y);
         GameObject go;
         if (kind == Kind.Scout) go = EnemyScout.Spawn(pos).gameObject;
+        else if (kind == Kind.Spider)
+        {
+            var sp = EnemySpider.Spawn(pos);
+            if (sp == null) return null;
+            go = sp.gameObject;
+        }
         else
         {
             var d = EnemyDrone.Spawn(pos, transform.position);
@@ -60,7 +66,7 @@ public class EnemySpawner : MonoBehaviour
 
     void OnDrawGizmos()
     {
-        Gizmos.color = kind == Kind.Scout ? new Color(1f, 0.6f, 0.2f) : new Color(1f, 0.2f, 0.2f);
+        Gizmos.color = kind == Kind.Scout ? new Color(1f, 0.6f, 0.2f) : kind == Kind.Spider ? new Color(0.6f, 0.9f, 0.2f) : new Color(1f, 0.2f, 0.2f);
         Gizmos.DrawWireSphere(transform.position, spawnRadius);
         Gizmos.DrawSphere(transform.position + Vector3.up * 0.5f, 0.3f);
         if (kind == Kind.Drone)
