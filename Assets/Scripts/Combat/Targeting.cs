@@ -22,7 +22,7 @@ public static class Targeting
             Vector3 d = h.transform.position - pos; d.y = 0f;
             float m = d.sqrMagnitude;
             if (m > bestD) continue;
-            if (ignoreBlackFog && fog != null && !fog.IsExplored(h.transform.position)) continue;
+            if (ignoreBlackFog && fog != null && !fog.IsKnown(h.transform.position)) continue;   // in the dark (not in sight, not explored)
             if (filter != null && !filter(h)) continue;
             if (lineOfSight && !HasLineOfSight(eye ?? pos + Vector3.up, h)) continue;
             best = h; bestD = m;

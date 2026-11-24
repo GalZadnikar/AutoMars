@@ -156,8 +156,15 @@ public class PlayerHealthHUD : MonoBehaviour
         }
     }
 
-    void OnHit(float amount, GameObject src)
+void OnHit(float amount, GameObject src)
     {
+        if (ph != null && src == ph.gameObject)
+        {
+            // hurting from the inside (no air): a softer thump than an enemy's blow
+            edgeK = Mathf.Max(edgeK, 0.4f);
+            punch = 0.5f;
+            return;
+        }
         edgeK = Mathf.Clamp01(0.45f + amount / 25f);
         punch = 1f;
     }

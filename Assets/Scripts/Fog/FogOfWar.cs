@@ -37,6 +37,13 @@ public class FogOfWar : MonoBehaviour
     [Tooltip("Overlay colour on the minimap for unexplored areas.")]
     public Color minimapFogColor = new Color(0f, 0f, 0f, 0.92f);
 
+    [Header("Memory")]
+    [Tooltip("On = only ground inside the pipe range is remembered as explored. Outside it the ground is lit while somebody sees it and goes dark again afterwards. Off (or pipe off / pump installed / no pipe in the scene) = everything seen stays explored")]
+    public bool rememberOnlyInsidePipeRange = true;
+    [Tooltip("The memory fades out past the pipe edge and ends this far outside it (m). The fade is as wide as Edge Softness")]
+    public float rememberMargin = 2f;
+
+
     [Header("Debug")]
     public bool revealAll;
 
@@ -171,10 +178,26 @@ public class FogOfWar : MonoBehaviour
         (curTex, prevTex) = (prevTex, curTex);
         (curPx, prevPx) = (prevPx, curPx);
 
+        // what is seen is remembered as explored, but (with the pipe) only inside the pipe range: outside it the
+        // ground is lit while somebody looks at it and dark again afterwards
+        var pipe = rememberOnlyInsidePipeRange ? PipeTether.Instance : null;
+        bool limited = pipe != null && pipe.Active;
+        Vector2 org = Origin;
+        float cellX = worldSize.x / res, cellZ = worldSize.y / res;
         for (int i = 0; i < visible.Length; i++)
         {
             byte v = visible[i];
-            if (v > explored[i]) { explored[i] = v; exploredDirty = true; minimapDirty = true; }
+            if (v > explored[i])
+            {
+                byte keep = v;
+                if (limited)
+                {
+                    // soft round edge instead of a staircase of cells
+                    float k = pipe.Coverage(org.x + (i % res + 0.5f) * cellX, org.y + (i / res + 0.5f) * cellZ, rememberMargin, edgeSoftness);
+                    if (k < 1f) keep = (byte)Mathf.Min(v, k * k * (3f - 2f * k) * 255f);
+                }
+                if (keep > explored[i]) { explored[i] = keep; exploredDirty = true; minimapDirty = true; }
+            }
             curPx[i] = new Color32(v, explored[i], 0, 255);
         }
         curTex.SetPixels32(curPx);
@@ -277,7 +300,16 @@ public class FogOfWar : MonoBehaviour
         return i >= 0 && explored[i] > 127;
     }
 
-    /// 0..1 how much of the map has been explored.
+    /// In sight right now, or explored before: anything but the dark.
+    public bool IsKnown(Vector3 worldPos)
+    {
+        if (revealAll) return true;
+        int i = CellIndex(worldPos);
+        return i >= 0 && (visible[i] > 127 || explored[i] > 127);
+    }
+
+    
+/// 0..1 how much of the map has been explored.
     public float ExploredFraction()
     {
         int n = 0;

@@ -10,6 +10,9 @@ public class BatteryPickup : MonoBehaviour
     public GameObject beam;
     public float spinSpeed = 70f;
     public float bobHeight = 0.18f;
+    [Tooltip("Only shown while inside somebody's sight right now. Off = always shown")]
+    public bool hideOutOfSight = true;
+
 
     Vector3 basePos;
     float phase, t, fullWarnCooldown;
@@ -17,11 +20,14 @@ public class BatteryPickup : MonoBehaviour
     Vector3 from;
     Transform target;
 
-    void Start()
+void Start()
     {
         if (visual == null) visual = transform;
         basePos = visual.localPosition;
         phase = Random.value;
+        // only shown while somebody sees it right now (not on dimmed, explored ground)
+        if (hideOutOfSight && GetComponent<FogHideable>() == null)
+            gameObject.AddComponent<FogHideable>().hide = FogHideable.Mode.WhenNotVisible;
     }
 
     void Update()

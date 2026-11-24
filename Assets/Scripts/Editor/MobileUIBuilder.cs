@@ -106,6 +106,7 @@ public static class MobileUIBuilder
         Column(toolCol, 18f, TextAnchor.UpperLeft);
         ToolSlot(toolCol, ToolKind.Shovel, shovelIcon, 156f, true);
         ToolSlot(toolCol, ToolKind.Pickaxe, pickIcon, 156f, true);
+        WeaponSlot(toolCol, RenderPistolIcon(false), 156f);
 
         // ---------------------------------------------------------------- right: inventory button
         var inv = Img("InventoryButton", safe, S("Button/Button_Circle_01_Purple"), Color.white, true);
@@ -307,6 +308,80 @@ public static class MobileUIBuilder
         arrow.preserveAspect = true;
         view.upgradeArrow = arrow.rectTransform;
         return view;
+    }
+
+    /// The weapon tile: the gun's icon, one pip per bullet and the reload wipe (see WeaponSlotView).
+    static WeaponSlotView WeaponSlot(Transform parent, Sprite icon, float size)
+    {
+        const int Bullets = 6;
+        var bg = Img("Weapon Slot", parent, S("Frame/ItemFrame_02_Bg_Single_Blue"), new Color(1f, 0.8f, 0.78f), true);
+        bg.rectTransform.sizeDelta = new Vector2(size, size);
+        var view = bg.gameObject.AddComponent<WeaponSlotView>();
+        view.group = bg.gameObject.AddComponent<CanvasGroup>();
+        view.button = bg.gameObject.AddComponent<Button>();
+        view.button.targetGraphic = bg;
+        var focus = Img("In Hands", bg.transform, S("Frame/ItemFrame_02_Focus_Yellow"), Color.white);
+        Stretch(focus.rectTransform, -4f);
+        view.activeFrame = focus.gameObject;
+        view.icon = Img("Icon", bg.transform, icon, Color.white);
+        Stretch(view.icon.rectTransform, size * 0.1f, size * 0.22f, size * 0.1f, size * 0.05f);
+        view.icon.preserveAspect = true;
+
+        // reload: a dark wipe that runs around the tile and uncovers the icon
+        var wipe = Img("Reload", bg.transform, bg.sprite, new Color(0.05f, 0.03f, 0.08f, 0.62f));
+        Stretch(wipe.rectTransform, 5f);
+        wipe.type = Image.Type.Filled;
+        wipe.fillMethod = Image.FillMethod.Radial360;
+        wipe.fillOrigin = (int)Image.Origin360.Top;
+        wipe.fillClockwise = false;
+        view.reloadFill = wipe;
+
+        // one pip per bullet along the bottom (drawn over the wipe, so they stay readable while reloading)
+        var dot = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Knob.psd");
+        var row = Rect("Pips", bg.transform);
+        Place(row, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, size * 0.085f), new Vector2(size * 0.84f, size * 0.18f));
+        float w = size * 0.1f, h = size * 0.15f, step = size * 0.13f;
+        view.pips = new Image[Bullets];
+        for (int i = 0; i < Bullets; i++)
+        {
+            var back = Img("Pip " + (i + 1), row, dot, new Color(0.1f, 0.07f, 0.13f, 0.95f));
+            Place(back.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2((i - (Bullets - 1) * 0.5f) * step, 0f), new Vector2(w + 6f, h + 6f));
+            var pip = Img("Bullet", back.transform, dot, new Color(1f, 0.84f, 0.3f));
+            Place(pip.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(w, h));
+            view.pips[i] = pip;
+        }
+
+        var flash = Img("Flash", bg.transform, bg.sprite, new Color(1f, 1f, 1f, 0f));
+        Stretch(flash.rectTransform, 2f);
+        view.flash = flash;
+        flash.gameObject.SetActive(false);
+        wipe.gameObject.SetActive(false);
+        return view;
+    }
+
+    /// Adds (or replaces) only the weapon tile in an existing mobile UI, so hand edits to the rest are kept.
+    [MenuItem("Tools/AutoMars/Mobile UI/Add Weapon Tile (keeps the rest of the UI)")]
+    public static void AddWeaponSlot()
+    {
+        var canvasGo = GameObject.Find("UI Canvas");
+        var col = canvasGo != null ? canvasGo.transform.Find("MobileUI/SafeArea/Tools") : null;
+        if (col == null) { Debug.LogError("Mobile UI: no 'UI Canvas/MobileUI/SafeArea/Tools' in the scene (build the mobile UI first)"); return; }
+        LoadFont();
+        var old = col.Find("Weapon Slot");
+        if (old != null) Object.DestroyImmediate(old.gameObject);
+        WeaponSlot(col, RenderPistolIcon(false), 156f);
+        EditorSceneManager.MarkSceneDirty(canvasGo.scene);
+    }
+
+    /// Icon_Pistol.png, rendered from the pistol model on the player (side view, barrel to the upper right).
+    public static Sprite RenderPistolIcon(bool force)
+    {
+        if (!AssetDatabase.IsValidFolder(Out)) AssetDatabase.CreateFolder("Assets/UI", "Mobile");
+        string path = Out + "/Icon_Pistol.png";
+        var pistol = Object.FindFirstObjectByType<PlayerPistol>(FindObjectsInactive.Include);
+        if (pistol != null && pistol.model != null && (force || !File.Exists(path)))
+            RenderModel(pistol.model.gameObject, path, Vector3.left, new Vector3(0f, 1f, 0.4f).normalized);
+        return AssetDatabase.LoadAssetAtPath<Sprite>(path);
     }
 
     static void UpgradeRow(RectTransform panel, ToolKind kind, Sprite icon, Sprite sand, Sprite stone, float y)
@@ -533,7 +608,9 @@ public static class MobileUIBuilder
     static readonly Vector3 Far = new Vector3(0f, -500f, 0f);
 
     /// The player's tool models have their handle along local Y and are thin along local X.
-    static void RenderModel(GameObject source, string path)
+    static void RenderModel(GameObject source, string path) => RenderModel(source, path, Vector3.right, new Vector3(0f, 1f, 1f).normalized);   // handle runs from bottom-left to top-right
+
+    static void RenderModel(GameObject source, string path, Vector3 viewDir, Vector3 up)
     {
         var clone = Object.Instantiate(source);
         clone.hideFlags = HideFlags.HideAndDontSave;
@@ -552,8 +629,7 @@ public static class MobileUIBuilder
             dst[i].SetPropertyBlock(mpb);
         }
         foreach (var tr in clone.GetComponentsInChildren<TrailRenderer>(true)) Object.DestroyImmediate(tr);
-        var up = new Vector3(0f, 1f, 1f).normalized;   // handle runs from bottom-left to top-right
-        Save(Shoot(clone, Vector3.right, up, 1.12f, -1f), path);
+        Save(Shoot(clone, viewDir, up, 1.12f, -1f), path);
         Object.DestroyImmediate(clone);
     }
 

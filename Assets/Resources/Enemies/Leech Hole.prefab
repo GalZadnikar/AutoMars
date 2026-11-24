@@ -57,7 +57,7 @@ MonoBehaviour:
   clawColor: {r: 0.96, g: 0.9, b: 0.8, a: 1}
   mouthColor: {r: 0.45, g: 0.03, b: 0.06, a: 1}
   mouthGlow: {r: 0.9, g: 0.12, b: 0.1, a: 1}
-  showInExplored: 1
+  showInExplored: 0
   holeRadius: 0.8
   rimRadius: 1.8
   rimHeight: 0.22

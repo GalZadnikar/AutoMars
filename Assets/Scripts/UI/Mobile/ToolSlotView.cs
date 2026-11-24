@@ -43,7 +43,7 @@ public class ToolSlotView : MonoBehaviour
 
         if (activeFrame != null)
         {
-            bool inHands = tools != null && (kind == ToolKind.Pickaxe ? tools.tool == PlayerTool.Pickaxe : tools.tool != PlayerTool.Pickaxe);
+            bool inHands = tools != null && (kind == ToolKind.Pickaxe ? tools.tool == PlayerTool.Pickaxe : tools.tool == PlayerTool.Shovel || tools.tool == PlayerTool.Gun);
             if (activeFrame.activeSelf != inHands) activeFrame.SetActive(inHands);
         }
 

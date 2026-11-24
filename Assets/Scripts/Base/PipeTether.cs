@@ -50,6 +50,9 @@ public class PipeTether : MonoBehaviour
     public float linkOverlap = 2f;
     [Tooltip("The pipe moves over to another base once that base is this much closer than the current one (m)")]
     public float switchMargin = 1f;
+    [Tooltip("On = a Base that is too far away to link still has its own circle and pipe: walk to it on air and its pipe grabs you. Off = only linked bases count")]
+    public bool separateBases = true;
+
     [Tooltip("Handoff: seconds the new base's pipe takes to reach out and plug into the player")]
     public float reachTime = 0.45f;
     [Tooltip("Handoff: seconds the old pipe takes to reel back into its base after it unplugs")]
@@ -63,7 +66,72 @@ public class PipeTether : MonoBehaviour
     [Tooltip("Build mode: circle of a Base being placed that is too far away to link")]
     public Color previewUnlinkedColor = new Color(1f, 0.35f, 0.3f, 0.95f);
 
-    [Header("H2O pump (last upgrade)")]
+    [Header("Elastic edge (stretch and snap back)")]
+    [Tooltip("On = the pipe stretches past the edge, slows you down, then snaps you back. Off = the old hard stop at the edge")]
+    public bool elasticEdge = true;
+    [Tooltip("How far past the edge the pipe stretches before it snaps you back (m)")]
+    public float stretchDistance = 2.5f;
+    [Tooltip("Outward walking speed at full stretch, as a part of normal speed (lower = more tension, longer before the snap)")]
+    [Range(0.03f, 1f)] public float stretchMinSpeed = 0.35f;
+    [Tooltip("When you stop pushing, the stretched pipe pulls you back toward the edge (higher = faster)")]
+    public float stretchPull = 4f;
+    [Tooltip("Speed of the snap back (m/s)")]
+    public float snapSpeed = 20f;
+    [Tooltip("The snap puts you this far inside the edge (m)")]
+    public float snapInside = 0.3f;
+    [Tooltip("Pipe thickness at full stretch, as a part of normal thickness")]
+    [Range(0.2f, 1f)] public float stretchThickness = 0.5f;
+    [Tooltip("Pipe colour at full stretch")]
+    public Color stretchColor = new Color(0.95f, 0.13f, 0.08f, 1f);
+    [Tooltip("How hard the pipe whips loose after a snap")]
+    public float snapKick = 9f;
+
+    [Header("Unplug trip (walk out past the full stretch)")]
+    [Tooltip("On = at full stretch the pipe pops off the player and whips back to the base; the player walks on without it (AirSupply counts down). Off = the pipe snaps the player back")]
+    public bool unplugAtFullStretch = true;
+    [Tooltip("Seconds the popped pipe takes to whip back into the base")]
+    public float recoilTime = 0.3f;
+    [Tooltip("The freed player lurches forward for a moment (m/s)")]
+    public float unplugLurch = 4f;
+    [Tooltip("Coming back: the pipe shoots out and grabs the player this far outside the edge (m)")]
+    public float catchReach = 1.2f;
+    [Tooltip("After the pipe pops off it can't grab the player until they are this much further out than Catch Reach (m), or one second has passed. Stops it from grabbing them back at once")]
+    public float catchArmMargin = 0.3f;
+    [Tooltip("Seconds the pipe takes to shoot out to the player")]
+    public float catchTime = 0.16f;
+    [Tooltip("The grabbing pipe is fully red and thin while it shoots out and pulls the player in; afterwards it goes back to normal over this many seconds")]
+    public float catchStretchFade = 0.35f;
+    [Tooltip("Range outline while unplugged (pulsing): where the pipe is. Pipe orange, so it doesn't mix with the blue air circle")]
+    public Color safeEdgeColor = new Color(1f, 0.62f, 0.2f, 1f);
+
+
+    
+[Header("Expand effect (when the range grows)")]
+    [Tooltip("On = a longer pipe is shown off: the camera pulls back, a pulse runs out from the base and pushes the edge out to the new range")]
+    public bool expandEffect = true;
+    [Tooltip("Material of the pulse dome (AutoMars/PipeBubble). Empty = found by shader name")]
+    public Material bubbleMaterial;
+    [Tooltip("The camera pulls back until the whole new circle fits, but not more than this many times its distance")]
+    public float expandZoomMax = 3f;
+    [Tooltip("Seconds: camera pulls back (a surge runs down the pipe to the base)")]
+    public float expandZoomTime = 0.5f;
+    [Tooltip("Seconds: the pulse dome grows from the base to the old edge")]
+    public float expandPulseTime = 0.55f;
+    [Tooltip("Seconds: the edge is pushed out to the new range (with a little overshoot)")]
+    public float expandGrowTime = 0.7f;
+    [Tooltip("Seconds the camera stays back after that, while the edge cools down")]
+    public float expandHoldTime = 0.6f;
+    [Tooltip("Colour of the edge and the pulse while they glow")]
+    public Color expandGlowColor = new Color(1f, 0.78f, 0.4f, 1f);
+    [Tooltip("The growing edge pushes the dark fog back: everything inside the new range becomes explored")]
+    public bool expandRevealsFog = true;
+    [Tooltip("How far past the edge the fog is cleared (m)")]
+    public float expandFogMargin = 2f;
+    [Tooltip("Height of the pulse dome, as a part of its radius")]
+    public float bubbleHeight = 0.55f;
+
+    
+[Header("H2O pump (last upgrade)")]
     [Tooltip("At this level the pipe is replaced by an H2O pump dropped where the player stands: no more pipe, no range limit. 0 = never")]
     public int pumpAtLevel = 4;
     public GameObject pumpPrefab;
@@ -143,6 +211,50 @@ public class PipeTether : MonoBehaviour
     bool netStarted;
     Transform attached;
 
+    // elastic edge
+    bool snapping;
+    float snapT;
+    MaterialPropertyBlock mpb;
+    static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+    static readonly int ColorId = Shader.PropertyToID("_Color");
+
+    /// 0 = inside the range, 1 = the pipe is stretched as far as it goes (about to snap back).
+    public float Stretch01 => Active && elasticEdge && nodes.Count > 0
+        ? Mathf.Clamp01(-DepthInside(player.position) / Mathf.Max(0.01f, stretchDistance)) : 0f;
+    /// The pipe is pulling the player back in right now.
+    public bool Snapping => snapping;
+
+    // unplug trip
+    bool detached, catching, catchArmed;
+    bool catchPull;      // the pipe has grabbed the returning player and is pulling them in
+    float catchLook;     // 1 = the grabbing pipe is shown fully stretched (red, thin, straight)
+    float unplugT;
+    /// The pipe popped off: the player is out on their own air (true until the pipe has grabbed them again).
+    public bool Detached => detached;
+    /// The pipe is shooting out to grab the returning player.
+    public bool Catching => catching;
+    /// The pipe popped off the player (full stretch).
+    public event Action Unplugged;
+    /// The pipe grabbed the player again.
+    public event Action Replugged;
+
+
+    // expand effect
+    bool fxOn;
+    float fxT, fxFrom, fxTo, fxR, fxGlow, fxSurge = -1f, fxZoom = 1f, fxZoomApplied = 1f, lastRange = -1f;
+    Transform fxCentre;
+    GameObject fxBubble;
+    Material fxBubbleMat;
+    LineRenderer fxRing;
+    Unity.Cinemachine.CinemachineFollow fxFollow;
+    static readonly int AlphaId = Shader.PropertyToID("_Alpha");
+    const int PulseSegments = 72;
+
+    /// The range upgrade effect is playing.
+    public bool Expanding => fxOn && fxT > 0f;
+
+
+
     struct Anchor { public Transform point; public Vector3 local; }
 
     const int Free = 0, Reaching = 1, Plugged = 2, Retracting = 3;
@@ -155,6 +267,11 @@ public class PipeTether : MonoBehaviour
         public int state;        // Free / Reaching / Plugged / Retracting
         public float t;          // 0 = reeled into the base, 1 = plugged into the player
         public float sag, sagVel;
+        public MeshRenderer mr;
+        public float shownStretch = -1f;
+        public bool recoil;      // popped off the player: whips back fast
+
+
     }
 
     // ------------------------------------------------------------------ setup
@@ -234,7 +351,7 @@ public class PipeTether : MonoBehaviour
         if (pipeMaterial != null) mr.sharedMaterial = pipeMaterial;
         mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
         go.SetActive(false);
-        var h = new Hose { go = go, spline = spline, tube = tube };
+        var h = new Hose { go = go, spline = spline, tube = tube, mr = mr };
         hoses.Add(h);
         return h;
     }
@@ -276,6 +393,7 @@ public class PipeTether : MonoBehaviour
         if (netFrame == Time.frameCount && nodes.Count > 0) return;
         netFrame = Time.frameCount;
         float r = Range;
+        TrackRange(r);
 
         candidates.Clear();
         foreach (var hb in HomeBase.All)
@@ -285,6 +403,9 @@ public class PipeTether : MonoBehaviour
         for (int i = 0; i < nextNodes.Count; i++)
             for (int j = candidates.Count - 1; j >= 0; j--)
                 if (Links(nextNodes[i].position, candidates[j].position)) { nextNodes.Add(candidates[j]); candidates.RemoveAt(j); }
+        // bases too far away to link still have their own circle and pipe: the player gets there on air
+        if (separateBases) { nextNodes.AddRange(candidates); candidates.Clear(); }
+
 
         bool changed = nextNodes.Count != nodes.Count || !Mathf.Approximately(r, netRange);
         if (!changed)
@@ -346,7 +467,30 @@ public class PipeTether : MonoBehaviour
         return best;
     }
 
-    /// Pick the base the pipe plugs into: the nearest one of the network (with a margin so it doesn't flicker).
+    /// How much of what is seen at this ground point the fog remembers: 1 inside the walkable circles of the
+    /// base network, fading to 0 over 'soft' metres and ending 'margin' metres past the edge.
+public float Coverage(float x, float z, float margin, float soft)
+    {
+        if (nodes.Count == 0) return 1f;
+        float end = Range + margin;   // nothing is remembered past this distance from a base
+        float best = 0f;
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            var n = nodes[i];
+            if (n == null) continue;
+            Vector3 c = n.position;
+            float dx = x - c.x, dz = z - c.z;
+            float d2 = dx * dx + dz * dz;
+            if (d2 >= end * end) continue;
+            float k = (end - Mathf.Sqrt(d2)) / Mathf.Max(0.01f, soft);
+            if (k >= 1f) return 1f;
+            if (k > best) best = k;
+        }
+        return best;
+    }
+
+    
+/// Pick the base the pipe plugs into: the nearest one of the network (with a margin so it doesn't flicker).
     /// Pick the base the pipe should plug into: the nearest one of the network (with a margin so it doesn't flicker).
     void PickAttached()
     {
@@ -376,7 +520,7 @@ public class PipeTether : MonoBehaviour
         groundVersion = GroundUtil.Version;
         arcCount = 0;
         if (nodes.Count == 0) nodes.Add(transform);
-        float r = Range;
+        float r = OutlineRange;   // the expand effect animates it
         const int n = RingSegments;
         float step = Mathf.PI * 2f / n;
         for (int i = 0; i < nodes.Count; i++)
@@ -491,16 +635,17 @@ public class PipeTether : MonoBehaviour
 
     /// Called by the player controller before it moves: the player can't leave the circles of the base network
     /// (slides along the edge instead), and is pulled back into the nearest circle if outside.
-    public Vector3 ConstrainVelocity(Vector3 pos, Vector3 velocity, float dt)
+public Vector3 ConstrainVelocity(Vector3 pos, Vector3 velocity, float dt)
     {
-        if (!Active || dt <= 0f) return velocity;
+        if (!Active || dt <= 0f) { snapping = false; return velocity; }
         RefreshNetwork();
+        if (detached) { snapping = false; return velocity; }   // unplugged: walks freely until the pipe grabs them again (UpdateUnplug)
         float r = Range;
         Vector3 h = new Vector3(velocity.x, 0f, velocity.z);
         Vector3 next = pos + h * dt;
-        if (DepthInside(next) >= 0f) return velocity;   // still inside some base's circle
+        if (!elasticEdge && DepthInside(next) >= 0f) return velocity;   // still inside some base's circle
 
-        // the circle we're most inside of (or least outside of): slide along its edge
+        // the circle we're most inside of (or least outside of)
         Transform best = null;
         float bestOver = float.MaxValue;
         foreach (var node in nodes)
@@ -509,81 +654,201 @@ public class PipeTether : MonoBehaviour
             if (over < bestOver) { bestOver = over; best = node; }
         }
         if (best == null) return velocity;
-        Vector3 d = next - best.position; d.y = 0f;
-        float dist = d.magnitude;
-        if (dist < 0.001f) return velocity;
 
-        Vector3 n = d / dist;
-        float outward = Vector3.Dot(h, n);
-        if (outward > 0f) h -= n * outward;                        // end of the pipe: slide along the edge
-        if (bestOver > 0f) h -= n * Mathf.Min(bestOver / dt, 8f);  // outside (teleport / downgrade): pulled back in
-        if (outward > 0.5f) limitHitT = 0.25f;
+        Vector3 n;
+        if (!elasticEdge)
+        {
+            // hard stop: slide along the edge
+            snapping = false;
+            Vector3 d = next - best.position; d.y = 0f;
+            float dist = d.magnitude;
+            if (dist < 0.001f) return velocity;
+            n = d / dist;
+            float outward = Vector3.Dot(h, n);
+            if (outward > 0f) h -= n * outward;                        // end of the pipe: slide along the edge
+            if (bestOver > 0f) h -= n * Mathf.Min(bestOver / dt, 8f);  // outside (teleport / downgrade): pulled back in
+            if (outward > 0.5f) limitHitT = 0.25f;
+            return new Vector3(h.x, velocity.y, h.z);
+        }
+
+        // elastic edge: past the edge the pipe stretches and slows you down; at full stretch it pops off
+        // (unplug trip) or snaps you back
+        Vector3 dp = pos - best.position; dp.y = 0f;
+        float dpLen = dp.magnitude;
+        if (dpLen < 0.001f) return velocity;
+        n = dp / dpLen;
+
+        if (snapping)
+        {
+            snapT += dt;
+            float remaining = bestOver + snapInside;
+            if (remaining <= 0.01f || snapT > 0.6f) snapping = false;   // back inside (or stuck on something)
+            else
+            {
+                h = -n * Mathf.Min(snapSpeed, remaining / dt);
+                return new Vector3(h.x, velocity.y, h.z);
+            }
+        }
+        if (bestOver <= 0f) return velocity;   // inside: walk freely (also out through the edge)
+
+        float len = Mathf.Max(0.01f, stretchDistance);
+        if (bestOver >= len)
+        {
+            if (unplugAtFullStretch)
+            {
+                Unplug(n);   // too much tension: the pipe pops off and the player walks on without it
+                return velocity;
+            }
+            // too much tension: snap back
+            snapping = true;
+            snapT = 0f;
+            limitHitT = 0.25f;   // outline + toast
+            foreach (var hose in hoses) if (hose.state == Plugged) hose.sagVel += snapKick;   // the pipe whips loose
+            h = -n * Mathf.Min(snapSpeed, (bestOver + snapInside) / dt);
+            return new Vector3(h.x, velocity.y, h.z);
+        }
+
+        float x = bestOver / len;
+        float outSpeed = Vector3.Dot(h, n);
+        if (outSpeed > 0.05f) h -= n * outSpeed * (1f - Mathf.Lerp(1f, stretchMinSpeed, x));    // harder and harder to walk out
+        else h -= n * Mathf.Min(bestOver / dt, bestOver * stretchPull + 1f);                     // not pushing: pulled back to the edge
         return new Vector3(h.x, velocity.y, h.z);
     }
 
     // ------------------------------------------------------------------ pipe shape
 
-    void LateUpdate()
+void LateUpdate()
     {
         bool on = Active;
         if (on) RefreshNetwork();
+        UpdateExpandFx();
         UpdateLimitFeedback(on);
         if (!on)
         {
-            foreach (var h in hoses) { h.state = Free; h.node = null; if (h.go.activeSelf) h.go.SetActive(false); }
+            foreach (var h in hoses) { h.state = Free; h.node = null; h.recoil = false; if (h.go.activeSelf) h.go.SetActive(false); }
             attached = null;
+            detached = false;
+            catching = false;
             return;
         }
         PickAttached();
+        UpdateUnplug();
         UpdateHoses();
+    }
+
+    // ------------------------------------------------------------------ unplug trip
+
+    /// Full stretch: the pipe pops off the player and whips back to its base. The player is free (and on their own air).
+    void Unplug(Vector3 outward)
+    {
+        if (detached) return;
+        detached = true;
+        catching = false;
+        catchArmed = false;
+        catchPull = false;
+        catchLook = 0f;
+        unplugT = 0f;
+        snapping = false;
+        foreach (var h in hoses)
+        {
+            if (h.state != Plugged && h.state != Reaching) continue;
+            h.state = Retracting;
+            h.recoil = true;
+            h.sagVel -= snapKick;   // flicks up as the tension lets go
+        }
+        if (unplugLurch > 0f)
+        {
+            var pc = player.GetComponent<JoystickPlayerController>();
+            if (pc != null) pc.Push(outward * unplugLurch);   // the freed player stumbles forward
+        }
+        CombatFX.Hit(PlugPoint(), -outward, stretchColor, 1.3f);
+        Unplugged?.Invoke();
+    }
+
+    /// Unplugged and back within the pipe's reach: it shoots out to grab the player.
+void UpdateUnplug()
+    {
+        if (!detached || catching) return;
+        unplugT += Time.deltaTime;
+        float over = -DepthInside(player.position);   // how far outside the edge
+        // armed once the player has really left (or after a moment), so the pipe doesn't grab them the instant it pops off
+        if (!catchArmed && (over > catchReach + catchArmMargin || unplugT > 1f)) catchArmed = true;
+        if (catchArmed && over <= catchReach) catching = true;
+    }
+
+    /// The pipe reached the returning player: plugged in again, and it pulls them inside the edge.
+    void Caught(Hose h)
+    {
+        detached = false;
+        catching = false;
+        snapping = true;   // ConstrainVelocity pulls the player in (ends at once if they're already inside)
+        catchPull = true;
+        catchLook = 1f;
+        snapT = 0f;
+        h.sagVel += snapKick;
+        CombatFX.Hit(PlugPoint(), Vector3.up, safeEdgeColor, 1.3f);
+        Replugged?.Invoke();
     }
 
     /// Handoff between bases: the new base's pipe reaches out and plugs into the player; once it's in,
     /// the old pipe unplugs and is reeled back into its own base. Turning back halfway reverses it.
-    void UpdateHoses()
+void UpdateHoses()
     {
         float dt = Time.deltaTime;
         Transform target = attached != null ? attached : transform;
+        // the pipe that grabs the returning player is at full tension: red and thin until it has pulled them in, then it relaxes
+        if (catching || (catchPull && snapping)) catchLook = 1f;
+        else
+        {
+            catchPull = false;
+            catchLook = Mathf.MoveTowards(catchLook, 0f, Time.deltaTime / Mathf.Max(0.01f, catchStretchFade));
+        }
+        bool wanted = !detached || catching;   // unplugged: no pipe goes to the player until it grabs them again
         Hose th = null;
         bool anyInUse = false;
         foreach (var h in hoses)
         {
-            if (h.state != Free && h.node == null) { h.state = Free; h.go.SetActive(false); }   // its base was destroyed
+            if (h.state != Free && h.node == null) { h.state = Free; h.recoil = false; h.go.SetActive(false); }   // its base was destroyed
             if (h.state == Free) continue;
             anyInUse = true;
-            if (h.node == target) th = h;
+            if (wanted && h.node == target) th = h;
         }
-        if (th == null)
+        if (wanted && th == null)
         {
             foreach (var h in hoses) if (h.state == Free) { th = h; break; }
             if (th == null) th = NewHose();
             th.node = target;
             th.sagVel = 0f;
-            if (!anyInUse) { th.state = Plugged; th.t = 1f; th.sag = maxSag; }   // start / after the pump: just there
+            th.recoil = false;
+            if (!anyInUse && !catching) { th.state = Plugged; th.t = 1f; th.sag = maxSag; }   // start / after the pump: just there
             else { th.state = Reaching; th.t = 0f; th.sag = 0f; }
         }
 
-        bool targetPlugged = th.state == Plugged;
+        bool targetPlugged = th != null && th.state == Plugged;
         foreach (var h in hoses)
         {
             if (h.state == Free) continue;
             if (h == th)
             {
-                if (h.state == Retracting) h.state = Reaching;   // turned back: reach out again from where it is
+                if (h.state == Retracting) { h.state = Reaching; h.recoil = false; }   // turned back: reach out again from where it is
                 if (h.state == Reaching)
                 {
-                    h.t += dt / Mathf.Max(0.01f, reachTime);
-                    if (h.t >= 1f) { h.t = 1f; h.state = Plugged; h.sagVel -= 3f; }   // clunk
+                    h.t += dt / Mathf.Max(0.01f, catching ? catchTime : reachTime);
+                    if (h.t >= 1f)
+                    {
+                        h.t = 1f; h.state = Plugged; h.sagVel -= 3f;   // clunk
+                        if (catching) Caught(h);
+                    }
                 }
             }
             else
             {
-                if (h.state == Reaching) h.state = Retracting;                      // changed our mind: pull it back
-                else if (h.state == Plugged && targetPlugged) h.state = Retracting;  // new one is in: unplug
+                if (h.state == Reaching) h.state = Retracting;                                       // changed our mind: pull it back
+                else if (h.state == Plugged && (targetPlugged || th == null)) h.state = Retracting;   // new one is in (or unplugged): let go
                 if (h.state == Retracting)
                 {
-                    h.t -= dt / Mathf.Max(0.01f, retractTime);
-                    if (h.t <= 0f) { h.t = 0f; h.state = Free; h.node = null; }
+                    h.t -= dt / Mathf.Max(0.01f, h.recoil ? recoilTime : retractTime);
+                    if (h.t <= 0f) { h.t = 0f; h.state = Free; h.node = null; h.recoil = false; }
                 }
             }
         }
@@ -595,14 +860,22 @@ public class PipeTether : MonoBehaviour
         }
     }
 
-    void DrawHose(Hose h)
+void DrawHose(Hose h)
     {
         Vector3 a = AnchorOf(h.node);
         Vector3 plug = PlugPoint();
         float r = thickness * 0.5f;
-        float e = h.t * h.t * (3f - 2f * h.t);
+        float e = h.recoil ? h.t * h.t : h.t * h.t * (3f - 2f * h.t);   // a popped pipe flies back fast at first
+        bool grabbing = catching && h.state == Reaching;
         Vector3 tip = h.state == Plugged ? plug : Vector3.Lerp(a, plug, e);
-        if (h.state == Reaching) tip.y += Mathf.Sin(e * Mathf.PI) * reachArc;           // flies up and over to the player
+        if (h.state == Reaching) tip.y += Mathf.Sin(e * Mathf.PI) * (grabbing ? reachArc * 0.3f : reachArc);   // flies up and over to the player
+        else if (h.recoil)
+        {
+            // whips: flicks up and wiggles sideways on its way back
+            Vector3 side = Vector3.Cross(Vector3.up, plug - a); side.y = 0f;
+            if (side.sqrMagnitude > 1e-4f) tip += side.normalized * (Mathf.Sin(e * Mathf.PI * 3f) * 0.6f * e);
+            tip.y += Mathf.Sin(e * Mathf.PI) * 0.9f;
+        }
         else if (h.state == Retracting) tip.y -= Mathf.Sin(e * Mathf.PI) * retractDroop; // droops while it's reeled in
         if (h.state != Plugged) tip.y = Mathf.Max(tip.y, Ground(tip) + r);
 
@@ -614,6 +887,30 @@ public class PipeTether : MonoBehaviour
         // a pipe that is only partly out hangs less
         float t01 = Mathf.Clamp01(Flat(tip - h.node.position) / Mathf.Max(0.1f, Range));
         float target = Mathf.Lerp(maxSag, minSag, t01 * t01) * (h.state == Plugged ? 1f : Mathf.Lerp(0.25f, 1f, e));
+
+        // elastic edge: a stretched pipe is pulled tight, gets thinner and turns red
+        // (a popped pipe goes back to normal while it is reeled in; a grabbing pipe is stretched from the start)
+        float stretch = h.recoil ? e : (h.state == Plugged || grabbing) ? Mathf.Max(Stretch01, catchLook) : 0f;
+        target *= 1f - stretch;
+        if (!Mathf.Approximately(stretch, h.shownStretch))
+        {
+            h.shownStretch = stretch;
+            h.tube.size = thickness * Mathf.Lerp(1f, stretchThickness, stretch);
+            if (h.mr != null)
+            {
+                if (stretch <= 0f) h.mr.SetPropertyBlock(null);
+                else
+                {
+                    if (mpb == null) mpb = new MaterialPropertyBlock();
+                    var mat = h.mr.sharedMaterial;
+                    Color normal = mat != null && mat.HasProperty(BaseColorId) ? mat.GetColor(BaseColorId) : Color.gray;
+                    Color c = Color.Lerp(normal, stretchColor, stretch);
+                    mpb.SetColor(BaseColorId, c);
+                    mpb.SetColor(ColorId, c);
+                    h.mr.SetPropertyBlock(mpb);
+                }
+            }
+        }
         float dt = Mathf.Min(Time.deltaTime, 0.05f);
         h.sagVel += ((target - h.sag) * sagSpring - h.sagVel * sagDamping) * dt;
         h.sag += h.sagVel * dt;
@@ -624,7 +921,7 @@ public class PipeTether : MonoBehaviour
             Vector3 p = Vector3.Lerp(a, tip, t);
             p.y -= h.sag * 4f * t * (1f - t);                     // hanging curve
             if (i > 0 && i < Points - 1) p.y = Mathf.Max(p.y, Ground(p) + r);   // rests on the ground if it's that low
-            pts[i] = new SplinePoint(p) { size = 1f, color = Color.white, normal = Vector3.up };
+            pts[i] = new SplinePoint(p) { size = SurgeSize(t), color = Color.white, normal = Vector3.up };
         }
         h.spline.SetPoints(pts, SplineComputer.Space.World);
         h.spline.RebuildImmediate(true, true);
@@ -663,7 +960,193 @@ public class PipeTether : MonoBehaviour
         else GameToast.Show("NEED " + cost + " MATERIALS", new Color(1f, 0.4f, 0.35f));
     }
 
-    // ------------------------------------------------------------------ limit feedback
+    // ------------------------------------------------------------------ expand effect (the range grew)
+
+    float OutlineRange => fxOn ? fxR : Range;
+
+    /// Notices a longer pipe (level-up, perk) and starts the effect from the old range.
+    void TrackRange(float r)
+    {
+        float old = lastRange;
+        lastRange = r;
+        if (old <= 0f || !Application.isPlaying) return;
+        if (r > old + 0.01f && expandEffect && !IsPumped) PlayExpandEffect(fxOn ? fxR : old, r);
+        else if (r < old - 0.01f) EndExpandFx();
+    }
+
+    /// Plays the range effect: the edge grows from one radius to another (the real range is not changed).
+    public void PlayExpandEffect(float from, float to)
+    {
+        if (fxOn) SetFxZoom(1f);
+        fxOn = true;
+        fxT = 0f;
+        fxFrom = from; fxTo = to; fxR = from;
+        fxGlow = 0f; fxSurge = -1f;
+    }
+
+    [ContextMenu("Play Expand Effect (test)")]
+    void TestExpandEffect()
+    {
+        if (!Application.isPlaying) return;
+        PlayExpandEffect(Range * 0.75f, Range);
+        RebuildLimitCircle();
+    }
+
+    void EndExpandFx()
+    {
+        if (!fxOn) return;
+        fxOn = false;
+        fxT = 0f; fxGlow = 0f; fxSurge = -1f;
+        SetFxZoom(1f);
+        DrawPulse(false, 0f, 0f);
+        RebuildLimitCircle();
+    }
+
+    void OnDisable()
+    {
+        if (!fxOn) return;
+        fxOn = false;
+        fxT = 0f; fxGlow = 0f; fxSurge = -1f;
+        if (fxFollow != null) SetFxZoom(1f);   // give the camera back its distance
+        if (fxBubble != null) Destroy(fxBubble);
+    }
+
+    void UpdateExpandFx()
+    {
+        if (!fxOn) return;
+        if (!Active) { EndExpandFx(); return; }
+        if (fxT <= 0f)
+        {
+            if (UIState.ModalOpen || UIState.BuildMode) return;   // wait until the world is on screen again
+            fxCentre = AttachedBase;
+            fxZoom = AutoZoom();
+        }
+        fxT += Mathf.Max(Time.deltaTime, 0.0001f);
+        float zoomTime = Mathf.Max(0.01f, expandZoomTime);
+        float tA = zoomTime, tB = tA + expandPulseTime, tC = tB + expandGrowTime, tD = tC + expandHoldTime, tE = tD + zoomTime;
+
+        // camera: back, hold, in again
+        float z = Mathf.SmoothStep(0f, 1f, fxT / zoomTime) * (1f - Mathf.SmoothStep(0f, 1f, (fxT - tD) / zoomTime));
+        SetFxZoom(Mathf.Lerp(1f, fxZoom, z));
+
+        // a surge runs down the pipe from the player to the base...
+        fxSurge = fxT < tA ? 1f - fxT / zoomTime : -1f;
+        // ...the base answers with a pulse that grows to the old edge...
+        float p = Mathf.Clamp01((fxT - tA) / Mathf.Max(0.01f, expandPulseTime));
+        // ...and pushes the edge out to the new range
+        float g = Mathf.Clamp01((fxT - tB) / Mathf.Max(0.01f, expandGrowTime));
+        float gb = g - 1f;
+        float back = 1f + 2.70158f * gb * gb * gb + 1.70158f * gb * gb;   // ease out with a little overshoot
+        float newR = Mathf.LerpUnclamped(fxFrom, fxTo, back);
+        fxGlow = fxT < tB ? 0.35f * p * p : 1f - Mathf.Clamp01((fxT - tC) / Mathf.Max(0.01f, expandHoldTime));
+
+        bool pulse = fxT > tA && fxT < tC;
+        float pe = 1f - (1f - p) * (1f - p) * (1f - p);
+        DrawPulse(pulse, fxT < tB ? fxFrom * pe : newR, fxT < tB ? Mathf.Lerp(0.55f, 1f, p) : 1f - g);
+
+        if (!Mathf.Approximately(newR, fxR))
+        {
+            fxR = newR;
+            RebuildLimitCircle();
+            // the growing edge pushes the dark fog back
+            if (expandRevealsFog && FogOfWar.Instance != null)
+                foreach (var node in nodes) FogOfWar.Instance.RevealExplored(node.position, fxR + expandFogMargin);
+        }
+        if (fxT >= tE) EndExpandFx();
+    }
+
+    /// How far the camera has to pull back so the whole new circle is on screen.
+    float AutoZoom()
+    {
+        var cam = Camera.main;
+        if (cam == null || player == null) return 1.5f;
+        float d = Vector3.Distance(cam.transform.position, player.position);
+        float half = d * Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad) * Mathf.Min(cam.aspect, 1f);
+        float need = (fxTo + Flat(player.position - fxCentre.position)) * 1.1f;
+        return Mathf.Clamp(need / Mathf.Max(0.1f, half), 1f, Mathf.Max(1f, expandZoomMax));
+    }
+
+    /// Scales the follow camera's distance (on top of the zoom slider's own value).
+    void SetFxZoom(float k)
+    {
+        if (Mathf.Approximately(k, fxZoomApplied)) return;
+        if (fxFollow == null)
+        {
+            var brain = Unity.Cinemachine.CinemachineBrain.GetActiveBrain(0);
+            var cam = brain != null ? brain.ActiveVirtualCamera as Unity.Cinemachine.CinemachineCamera : null;
+            fxFollow = cam != null ? cam.GetComponent<Unity.Cinemachine.CinemachineFollow>() : null;
+            if (fxFollow == null) return;
+        }
+        fxFollow.FollowOffset *= k / fxZoomApplied;
+        fxZoomApplied = k;
+    }
+
+    /// The pulse: a see-through dome around the base plus a ring where it touches the ground.
+    void DrawPulse(bool show, float radius, float alpha)
+    {
+        if (!show)
+        {
+            if (fxBubble != null && fxBubble.activeSelf) fxBubble.SetActive(false);
+            if (fxRing != null) fxRing.enabled = false;
+            return;
+        }
+        if (fxBubble == null)
+        {
+            var sh = bubbleMaterial != null ? bubbleMaterial.shader : Shader.Find("AutoMars/PipeBubble");
+            if (sh != null)
+            {
+                fxBubble = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                fxBubble.name = "Pipe Expand Pulse";
+                Destroy(fxBubble.GetComponent<Collider>());
+                fxBubbleMat = bubbleMaterial != null ? new Material(bubbleMaterial) : new Material(sh);
+                var mr = fxBubble.GetComponent<MeshRenderer>();
+                mr.sharedMaterial = fxBubbleMat;
+                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                mr.receiveShadows = false;
+            }
+        }
+        if (fxRing == null && rangeRoot != null)
+        {
+            fxRing = NewLine("Expand Pulse");
+            fxRing.loop = true;
+            fxRing.widthMultiplier = 0.3f;
+            fxRing.positionCount = PulseSegments;
+        }
+        Vector3 c = fxCentre != null ? fxCentre.position : transform.position;
+        c.y = Ground(c);
+        if (fxBubble != null)
+        {
+            if (!fxBubble.activeSelf) fxBubble.SetActive(true);
+            fxBubble.transform.SetPositionAndRotation(c, Quaternion.identity);
+            fxBubble.transform.localScale = new Vector3(radius * 2f, radius * 2f * bubbleHeight, radius * 2f);
+            var col = expandGlowColor; col.a = 1f;
+            fxBubbleMat.SetColor(ColorId, col);
+            fxBubbleMat.SetFloat(AlphaId, alpha);
+        }
+        if (fxRing != null)
+        {
+            fxRing.enabled = true;
+            for (int i = 0; i < PulseSegments; i++)
+            {
+                var q = RingPoint(c, radius, i * Mathf.PI * 2f / PulseSegments);
+                q.y = GroundUtil.Height(q, c.y) + 0.1f;
+                fxRing.SetPosition(i, q);
+            }
+            var rc = expandGlowColor; rc.a = alpha;
+            fxRing.startColor = fxRing.endColor = rc;
+        }
+    }
+
+    /// Pipe thickness along its length (0 = base, 1 = player): a bulge travels down it during the expand effect.
+    float SurgeSize(float t)
+    {
+        if (fxSurge < 0f) return 1f;
+        float d = (t - fxSurge) / 0.12f;
+        return 1f + 0.9f * Mathf.Exp(-d * d);
+    }
+
+    
+// ------------------------------------------------------------------ limit feedback
 
     void UpdateLimitFeedback(bool on)
     {
@@ -687,6 +1170,8 @@ public class PipeTether : MonoBehaviour
             if (previewOn) target = 1f;   // build mode: placing a Base shows where you can walk
         }
         limitAlpha = Mathf.MoveTowards(limitAlpha, target, Time.unscaledDeltaTime * 3f);
+        if (Expanding) limitAlpha = 1f;
+
         ApplyLimitColor();
 
         if (previewLine != null)
@@ -703,13 +1188,22 @@ public class PipeTether : MonoBehaviour
         }
     }
 
-    void ApplyLimitColor()
+void ApplyLimitColor()
     {
         bool show = limitAlpha > 0.01f;
         var col = new Color(1f, 0.55f, 0.15f, limitAlpha * 0.85f);
+        if (detached)
+        {
+            // unplugged: the edge is where the pipe can grab you again
+            col = safeEdgeColor;
+            col.a = limitAlpha * (0.65f + 0.3f * Mathf.Sin(Time.unscaledTime * 6f));
+        }
+        if (fxGlow > 0f) col = Color.Lerp(col, expandGlowColor, fxGlow);
+        float width = Mathf.Lerp(detached ? 0.3f : 0.18f, 0.5f, fxGlow);
         for (int i = 0; i < arcCount && i < arcs.Count; i++)
         {
             arcs[i].enabled = show;
+            arcs[i].widthMultiplier = width;
             arcs[i].startColor = arcs[i].endColor = col;
         }
     }

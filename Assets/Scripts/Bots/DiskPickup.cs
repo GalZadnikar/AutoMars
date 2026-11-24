@@ -10,6 +10,9 @@ public class DiskPickup : MonoBehaviour
     public float tilt = 25f;
     public float spinSpeed = 90f;
     public float bobHeight = 0.15f;
+    [Tooltip("Only shown while inside somebody's sight right now. Off = always shown")]
+    public bool hideOutOfSight = true;
+
 
     /// Ignore the player until this time (a freshly dropped disk stays on the ground a moment).
     float enableTime;
@@ -50,11 +53,14 @@ public class DiskPickup : MonoBehaviour
     Vector3 from;
     Transform target;
 
-    void Start()
+void Start()
     {
         if (visual == null) visual = transform;
         basePos = visual.localPosition;
         phase = Random.value;
+        // only shown while somebody sees it right now (not on dimmed, explored ground)
+        if (hideOutOfSight && GetComponent<FogHideable>() == null)
+            gameObject.AddComponent<FogHideable>().hide = FogHideable.Mode.WhenNotVisible;
     }
 
     void Update()

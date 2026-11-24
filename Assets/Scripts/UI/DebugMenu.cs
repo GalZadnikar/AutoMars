@@ -279,7 +279,7 @@ public class DebugMenu : MonoBehaviour
         godLabel = Btn("GOD MODE: " + (PlayerHealth.GodMode ? "ON" : "OFF"), g, () => { PlayerHealth.GodMode = !PlayerHealth.GodMode; godLabel.text = PlayerHealth.GodMode ? "GOD MODE: ON" : "GOD MODE: OFF"; }).GetComponentInChildren<TMP_Text>();
     }
 
-    void BuildWorldTab(RectTransform p)
+void BuildWorldTab(RectTransform p)
     {
         var g = Section(p, "TELEPORT");
         Btn("TP FACTORY", g, () => Teleport(Fac() != null ? Fac().transform : null, -4f));
@@ -288,7 +288,7 @@ public class DebugMenu : MonoBehaviour
 
         g = Section(p, "TOGGLES");
         speedLabel = Btn("SPEED x1", g, CycleSpeed).GetComponentInChildren<TMP_Text>();
-        TMP_Text freeLabel = null, fogLabel = null, pipeLabel = null;
+        TMP_Text freeLabel = null, fogLabel = null, pipeLabel = null, unplugLabel = null;
         pipeLabel = Btn("PIPE: ON", g, () => { PipeTether.Disabled = !PipeTether.Disabled; pipeLabel.text = PipeTether.Disabled ? "PIPE: OFF" : "PIPE: ON"; }).GetComponentInChildren<TMP_Text>();
         freeLabel = Btn("FREE BUILD: OFF", g, () => { BuildMode.FreeBuild = !BuildMode.FreeBuild; freeLabel.text = BuildMode.FreeBuild ? "FREE BUILD: ON" : "FREE BUILD: OFF"; }).GetComponentInChildren<TMP_Text>();
         fogLabel = Btn("REVEAL MAP: OFF", g, () =>
@@ -299,6 +299,19 @@ public class DebugMenu : MonoBehaviour
             fog.Refresh();
             fogLabel.text = fog.revealAll ? "REVEAL MAP: ON" : "REVEAL MAP: OFF";
         }).GetComponentInChildren<TMP_Text>();
+
+        g = Section(p, "AIR (UNPLUG TRIP)");
+        // UNPLUG ON = the pipe pops off at full stretch and the air counts down; OFF = the old snap back
+        bool unplugOn = PipeTether.Instance == null || PipeTether.Instance.unplugAtFullStretch;
+        unplugLabel = Btn(unplugOn ? "UNPLUG: ON" : "UNPLUG: OFF", g, () =>
+        {
+            var pt = PipeTether.Instance;
+            if (pt == null) return;
+            pt.unplugAtFullStretch = !pt.unplugAtFullStretch;
+            unplugLabel.text = pt.unplugAtFullStretch ? "UNPLUG: ON" : "UNPLUG: OFF";
+        }).GetComponentInChildren<TMP_Text>();
+        Btn("REFILL AIR", g, () => { if (AirSupply.Instance != null) AirSupply.Instance.Refill(); });
+        Btn("AIR +10s", g, () => { if (AirSupply.Instance != null) { AirSupply.Instance.airSeconds += 10f; GameToast.Show("AIR TANK " + Mathf.RoundToInt(AirSupply.Instance.airSeconds) + " s", Color.white); } });
     }
 
     static Transform PlayerT()
