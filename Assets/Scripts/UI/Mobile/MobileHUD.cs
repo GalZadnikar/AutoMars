@@ -13,7 +13,7 @@ public class MobileHUD : MonoBehaviour
     public static MobileHUD Instance { get; private set; }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    static void ResetStatics() { Instance = null; }
+    static void ResetStatics() { Instance = null; BarLayout = false; }
 
     [Header("Counters (HUD + inventory)")]
     public ResourceRow[] rows;
@@ -26,6 +26,37 @@ public class MobileHUD : MonoBehaviour
     [Header("Inventory")]
     public GameObject inventory;
     public Button inventoryButton, inventoryClose, inventoryBackdrop;
+
+    [Header("Layout A / B")]
+    [Tooltip("Layout A: the tool tiles on the left; tools switch by themselves")]
+    public GameObject sideTools;
+    [Tooltip("Layout B: the bar at the bottom (ToolBarView); tap a tile to take that tool")]
+    public GameObject toolBar;
+
+    /// True while layout B (bottom bar, tap to switch) is on.
+    public static bool BarLayout { get; private set; }
+    const string LayoutKey = "automars_hud_bar";
+    /// The layout that was chosen last (kept between runs).
+    public static bool SavedBarLayout => PlayerPrefs.GetInt(LayoutKey, 0) == 1;
+
+    /// Switches between layout A (side tiles, automatic tools) and B (bottom bar, tap to switch, two weapon slots).
+    public static void SetBarLayout(bool bar)
+    {
+        PlayerPrefs.SetInt(LayoutKey, bar ? 1 : 0);
+        if (Instance != null) Instance.ApplyLayout(bar);
+    }
+
+    void ApplyLayout(bool bar)
+    {
+        BarLayout = bar && toolBar != null;
+        if (sideTools != null) sideTools.SetActive(!BarLayout);
+        if (toolBar != null) toolBar.SetActive(BarLayout);
+        PlayerWeapon.TwoSlots = BarLayout;
+        var tools = player != null ? player.GetComponent<PlayerTools>() : FindFirstObjectByType<PlayerTools>();
+        if (tools == null) return;
+        if (BarLayout) tools.Equip(tools.tool);   // stays on what he holds; from now on only a tap changes it
+        else tools.SetAuto(true);
+    }
 
     [Header("Tool info popup")]
     public ToolInfoPopup toolInfo;
@@ -52,6 +83,7 @@ public class MobileHUD : MonoBehaviour
     {
         var pc = FindFirstObjectByType<JoystickPlayerController>();
         if (pc != null) player = pc.transform;
+        ApplyLayout(SavedBarLayout);
     }
 
     void OnDestroy() { if (Instance == this) Instance = null; }

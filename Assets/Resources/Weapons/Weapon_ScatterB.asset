@@ -1,0 +1,58 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 72a2383c281aa454dad8a05407e2934b, type: 3}
+  m_Name: Weapon_ScatterB
+  m_EditorClassIdentifier: Assembly-CSharp::WeaponDef
+  displayName: SCATTER B
+  icon: {fileID: 21300000, guid: d50bebdc46f214846b67cea88ae6d85e, type: 3}
+  color: {r: 1, g: 0.55, b: 0.2, a: 1}
+  mode: 0
+  model: {fileID: 919132149155446097, guid: f05927c2336364b5e91c5f56a956a8da, type: 3}
+  modelScale: 1.4
+  grip: {x: 0, y: 0.06434461, z: 0.0013303503}
+  muzzle: {x: 0, y: 0.15634638, z: 0.27027953}
+  damage: 2
+  range: 3.6
+  magazine: 2
+  fireInterval: 0.45
+  reloadTime: 1.3
+  pellets: 8
+  spread: 55
+  speed: 30
+  homing: 0
+  radius: 0.15
+  pierce: 99
+  splashRadius: 0
+  splashDamage: 0
+  knockback: 0.8
+  beamFx: {fileID: 0}
+  beamScale: 0.5
+  beamTick: 0.2
+  damageMax: 0
+  rampTime: 0
+  recoilAngle: 42
+  recoilBack: 0.2
+  recoilTime: 0.32
+  shotShake: 0.18
+  hitShake: 0.06
+  killShake: 0.35
+  flashLight: 10
+  casings: 1
+  projectileFx: {fileID: 193226, guid: 4e1790ceaba7cf84d97431c9452ca8fb, type: 3}
+  projectileScale: 0.5
+  muzzleFx: {fileID: 195376, guid: 346f3bf3686d682498113714ee132099, type: 3}
+  muzzleScale: 1
+  impactFx: {fileID: 195742, guid: c83fb3ef04bb383408bb2064b89690b2, type: 3}
+  impactScale: 0.4
+  tracerLength: 1.8
+  tracerWidth: 0.14
+  rangeArc: 1

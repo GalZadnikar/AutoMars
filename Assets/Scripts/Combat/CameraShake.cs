@@ -7,12 +7,14 @@ using UnityEngine;
 public static class CameraShake
 {
     /// Global strength (0 = no shake at all).
-    public static float Scale = 1f;
+    public static float Scale = DefaultScale;
+    /// Everything in the game kicks the camera through here, so this one number tones all of it down (1 = the first tuning).
+    public const float DefaultScale = 0.5f;
 
     static CinemachineImpulseSource source;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    static void ResetStatics() { source = null; Scale = 1f; }
+    static void ResetStatics() { source = null; Scale = DefaultScale; }
 
     /// strength = roughly how many metres the camera jumps. dir = which way (default: a random sideways / up direction).
     public static void Kick(float strength, Vector3? dir = null, float duration = 0.16f)

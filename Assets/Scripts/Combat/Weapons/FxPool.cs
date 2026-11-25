@@ -47,6 +47,9 @@ public static class FxPool
         }
         foreach (var a in go.GetComponentsInChildren<AudioSource>(true)) a.enabled = Sound;
         foreach (var c in go.GetComponentsInChildren<Collider>(true)) Object.Destroy(c);
+        // Hovl Studio prefabs bring their own mover / laser scripts (HS_...); the game drives the effect itself
+        foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>(true))
+            if (mb != null && mb.GetType().Name.StartsWith("HS_")) Object.DestroyImmediate(mb);
         return go;
     }
 

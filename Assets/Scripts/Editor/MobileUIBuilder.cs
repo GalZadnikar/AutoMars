@@ -212,6 +212,7 @@ public static class MobileUIBuilder
         basePanel.gameObject.SetActive(false);
 
         EditorSceneManager.MarkSceneDirty(canvasGo.scene);
+        AddToolBar();
         Debug.Log("Mobile UI built under 'UI Canvas/MobileUI' (canvas is now 1080x1920, match width).");
     }
 
@@ -360,6 +361,69 @@ public static class MobileUIBuilder
         var old = col.Find("Weapon Slot");
         if (old != null) Object.DestroyImmediate(old.gameObject);
         WeaponSlot(col, 156f);
+        EditorSceneManager.MarkSceneDirty(canvasGo.scene);
+    }
+
+    /// Layout B: the bar at the bottom with four tiles (shovel, pickaxe, weapon 1, weapon 2). See ToolBarView.
+    static GameObject ToolBar(Transform safe)
+    {
+        const float size = 200f, step = 222f;
+        var bar = Rect("ToolBar", safe);
+        Place(bar, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 165f), new Vector2(step * 3f + size, size));
+        var view = bar.gameObject.AddComponent<ToolBarView>();
+        view.slots = new ToolBarView.Slot[4];
+        string[] names = { "Shovel", "Pickaxe", "Weapon 1", "Weapon 2" };
+        for (int i = 0; i < 4; i++)
+        {
+            var bg = Img(names[i] + " Tile", bar, S("Frame/ItemFrame_02_Bg_Single_Blue"), i < 2 ? Color.white : new Color(1f, 0.8f, 0.78f), true);
+            Place(bg.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2((i - 1.5f) * step, 0f), new Vector2(size, size));
+            var s = new ToolBarView.Slot();
+            s.root = bg.rectTransform;
+            s.button = bg.gameObject.AddComponent<Button>();
+            s.button.targetGraphic = bg;
+            var focus = Img("Selected", bg.transform, S("Frame/ItemFrame_02_Focus_Yellow"), Color.white);
+            Stretch(focus.rectTransform, -5f);
+            s.selected = focus.gameObject;
+            s.icon = Img("Icon", bg.transform, null, Color.white);
+            Stretch(s.icon.rectTransform, size * 0.08f, size * 0.28f, size * 0.08f, size * 0.04f);
+            s.icon.preserveAspect = true;
+            s.icon.enabled = false;
+            var wipe = Img("Reload", bg.transform, bg.sprite, new Color(0.05f, 0.03f, 0.08f, 0.62f));
+            Stretch(wipe.rectTransform, 5f);
+            wipe.type = Image.Type.Filled;
+            wipe.fillMethod = Image.FillMethod.Radial360;
+            wipe.fillOrigin = (int)Image.Origin360.Top;
+            wipe.fillClockwise = false;
+            s.reload = wipe;
+            // the band along the bottom: level for tools, ammo for weapons; yellow on the selected tile
+            s.strip = Img("Strip", bg.transform, null, new Color(0.16f, 0.13f, 0.24f, 0.92f));
+            Place(s.strip.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, size * 0.07f), new Vector2(size * 0.84f, size * 0.2f));
+            s.label = Txt("Label", s.strip.transform, "", size * 0.17f, Color.white, TextAlignmentOptions.Center);
+            Stretch(s.label.rectTransform);
+            wipe.gameObject.SetActive(false);
+            focus.gameObject.SetActive(false);
+            view.slots[i] = s;
+        }
+        return bar.gameObject;
+    }
+
+    /// Adds (or replaces) only the bottom tool bar of layout B in an existing mobile UI and links both layouts to MobileHUD.
+    [MenuItem("Tools/AutoMars/Mobile UI/Add Bottom Tool Bar (layout B, keeps the rest of the UI)")]
+    public static void AddToolBar()
+    {
+        var canvasGo = GameObject.Find("UI Canvas");
+        var safe = canvasGo != null ? canvasGo.transform.Find("MobileUI/SafeArea") : null;
+        var hud = canvasGo != null ? canvasGo.GetComponentInChildren<MobileHUD>(true) : null;
+        if (safe == null || hud == null) { Debug.LogError("Mobile UI: no 'UI Canvas/MobileUI/SafeArea' in the scene (build the mobile UI first)"); return; }
+        LoadFont();
+        var old = safe.Find("ToolBar");
+        if (old != null) Object.DestroyImmediate(old.gameObject);
+        var bar = ToolBar(safe);
+        var side = safe.Find("Tools");
+        hud.sideTools = side != null ? side.gameObject : null;
+        hud.toolBar = bar;
+        bar.SetActive(false);   // layout A is the default; MobileHUD turns the chosen one on at start
+        EditorUtility.SetDirty(hud);
         EditorSceneManager.MarkSceneDirty(canvasGo.scene);
     }
 

@@ -14,6 +14,8 @@ public static class WeaponBuilder
     const string Guns = "Assets/3DBSciFiTool/";
     const string Fx = "Assets/Epic Toon FX/Prefabs/Combat/";
     const string FxLoot = "Assets/Epic Toon FX/Prefabs/Interactive/";
+    const string Hovl = "Assets/Hovl Studio/";
+    const string HovlProj = Hovl + "AAA Projectiles Vol 1/Prefabs/";
 
     class Spec
     {
@@ -26,6 +28,12 @@ public static class WeaponBuilder
         public string projectile, muzzle, impact;
         public float projectileScale, muzzleScale, impactScale;
         public float muzzleY = float.NaN;   // override for models whose barrel isn't their front-most part
+        public string variantOf;            // file of the weapon this is a second take on (its test pickup lies next to that one)
+        public bool beam, rangeArc;
+        public bool hovl;                   // projectile / muzzle / impact are names from Hovl's AAA Projectiles (Projectile N, Flash N, Hit N)
+        public float side;                  // where a variant's test pickup lies, in metres east of its original
+        public string beamFx;
+        public float damageMax, rampTime, beamTick = 0.2f, beamScale = 0.5f, tracerLength;
     }
 
     static readonly Spec[] Specs =
@@ -77,6 +85,65 @@ public static class WeaponBuilder
             recoilAngle = 30f, recoilBack = 0.2f, recoilTime = 0.35f, shotShake = 0.1f, hitShake = 0.2f, killShake = 0.45f, flash = 7f, casings = false,
             projectile = "Missiles/NovaSmall/NovaMissileSmallBlue", muzzle = "Muzzleflash/EnergyNovaSmallMuzzle/EnergyNovaMuzzleSmallBlue", impact = "Explosions/NovaExplosion/ExplosionNovaBlue",
             projectileScale = 1.6f, muzzleScale = 0.8f, impactScale = 1f, muzzleY = 0.2f },
+
+        // ---- second takes, to compare with the originals (same models)
+
+        // SCATTER B: short reach and a wide fan, and every pellet flies on through everything in the fan,
+        // so a tight group all gets hit. Shoves hard. Bright tracers and a fan on the ground show the reach.
+        new Spec { file = "Weapon_ScatterB", variantOf = "Weapon_Scatter", side = -1.9f, name = "SCATTER B", model = "Guns02/Cosmic_Retro_Blaster_1.fbx", icon = "Guns02/Icons_UI/SideView/SideView_Blaster_1_1.png",
+            color = new Color(1f, 0.55f, 0.2f), damage = 2f, pellets = 8, spread = 55f, range = 3.6f, magazine = 2, interval = 0.45f, reload = 1.3f,
+            speed = 30f, homing = 0f, pierce = 99, knock = 0.8f,
+            recoilAngle = 42f, recoilBack = 0.2f, recoilTime = 0.32f, shotShake = 0.18f, hitShake = 0.06f, killShake = 0.35f, flash = 10f, casings = true,
+            projectile = "Missiles/Bullet/BulletMeshSmallFire", muzzle = "Muzzleflash/- Misc/GunFire/GunFireYellow", impact = "Explosions/BulletExplosion/BulletExplosionFire",
+            projectileScale = 0.5f, muzzleScale = 1f, impactScale = 0.4f, tracerLength = 1.8f, rangeArc = true },
+
+        // RAY GUN B: a beam on one enemy. Small damage at first, more and more the longer it stays on the same
+        // enemy; a new enemy starts over. The magazine is beam time (30 ticks = 6 s).
+        new Spec { file = "Weapon_RayGunB", variantOf = "Weapon_RayGun", side = -1.9f, name = "RAY GUN B", model = "Guns02/Cosmic_Retro_Blaster_10.fbx", icon = "Guns02/Icons_UI/SideView/SideView_Blaster_1_10.png",
+            color = new Color(1f, 0.3f, 0.25f), beam = true, beamFx = "3D Lasers Pack/Prefabs/Laser beam 4 red", beamScale = 0.9f, beamTick = 0.2f,
+            damage = 1f, damageMax = 4f, rampTime = 2.4f, range = 6f, magazine = 30, interval = 0.2f, reload = 1.6f,
+            speed = 45f, homing = 0f, knock = 0.05f,
+            recoilAngle = 5f, recoilBack = 0.03f, recoilTime = 0.12f, shotShake = 0f, hitShake = 0.03f, killShake = 0.3f, flash = 3f, casings = false,
+            projectile = "Missiles/Laser/LaserMeshMissileRed", muzzle = "Muzzleflash/LaserMuzzle/LaserMuzzleRed", impact = "Explosions/LaserExplosion/LaserExplosionRed",
+            projectileScale = 0.8f, muzzleScale = 0.5f, impactScale = 0.5f, rangeArc = true },
+
+        // ---- same weapons with the projectile, muzzle flash and hit from Hovl's AAA Projectiles (RPG VFX Bundle),
+        //      to compare the looks. The numbers are the originals'.
+
+        new Spec { file = "Weapon_PistolH", variantOf = "Weapon_Pistol", side = 2.6f, hovl = true, name = "PISTOL H", model = "Guns01/Cosmic_Retro_Blaster_3_4.fbx", icon = "Guns01/Icons_UI/SideView/SideView_Blaster_3_4.png",
+            color = new Color(1f, 0.85f, 0.3f), damage = 4f, range = 6f, magazine = 6, interval = 0.26f, reload = 1.1f,
+            speed = 30f, homing = 120f, knock = 0.3f,
+            recoilAngle = 24f, recoilBack = 0.1f, recoilTime = 0.16f, shotShake = 0.05f, hitShake = 0.08f, killShake = 0.3f, flash = 5f, casings = true,
+            projectile = "Projectile 4 yellow arrow", muzzle = "Flash 4 yellow arrow", impact = "Hit 4 yellow arrow",
+            projectileScale = 0.6f, muzzleScale = 0.6f, impactScale = 0.6f },
+
+        new Spec { file = "Weapon_RapidH", variantOf = "Weapon_Rapid", side = 2.6f, hovl = true, name = "RAPID H", model = "Guns01/Cosmic_Retro_Blaster_3_6.fbx", icon = "Guns01/Icons_UI/SideView/SideView_Blaster_3_6.png",
+            color = new Color(0.4f, 0.75f, 1f), damage = 2f, range = 5.5f, magazine = 20, interval = 0.085f, reload = 1.5f, spread = 7f,
+            speed = 34f, homing = 60f, knock = 0.1f,
+            recoilAngle = 9f, recoilBack = 0.05f, recoilTime = 0.08f, shotShake = 0.025f, hitShake = 0.04f, killShake = 0.25f, flash = 3f, casings = true,
+            projectile = "Projectile 14 blue rapid", muzzle = "Flash 14 blue rapid", impact = "Hit 14 blue rapid",
+            projectileScale = 0.5f, muzzleScale = 0.5f, impactScale = 0.5f },
+
+        new Spec { file = "Weapon_RevolverH", variantOf = "Weapon_Revolver", side = 2.6f, hovl = true, name = "REVOLVER H", model = "Guns01/Cosmic_Retro_Blaster_3_9.fbx", icon = "Guns01/Icons_UI/SideView/SideView_Blaster_3_9.png",
+            color = new Color(1f, 0.55f, 0.15f), damage = 10f, range = 6.5f, magazine = 6, interval = 0.55f, reload = 1.6f,
+            speed = 40f, homing = 90f, radius = 0.2f, pierce = 1, knock = 0.9f,
+            recoilAngle = 42f, recoilBack = 0.16f, recoilTime = 0.28f, shotShake = 0.12f, hitShake = 0.14f, killShake = 0.4f, flash = 8f, casings = false,
+            projectile = "Projectile 16 fire", muzzle = "Flash 16 fire", impact = "Hit 16 fire",
+            projectileScale = 0.7f, muzzleScale = 0.7f, impactScale = 0.8f },
+
+        new Spec { file = "Weapon_RayGunH", variantOf = "Weapon_RayGun", side = 2.6f, hovl = true, name = "RAY GUN H", model = "Guns02/Cosmic_Retro_Blaster_10.fbx", icon = "Guns02/Icons_UI/SideView/SideView_Blaster_1_10.png",
+            color = new Color(1f, 0.3f, 0.25f), damage = 3f, range = 6.5f, magazine = 10, interval = 0.2f, reload = 1.4f,
+            speed = 45f, homing = 60f, pierce = 99, knock = 0.12f,
+            recoilAngle = 8f, recoilBack = 0.04f, recoilTime = 0.1f, shotShake = 0.03f, hitShake = 0.05f, killShake = 0.3f, flash = 4f, casings = false,
+            projectile = "Projectile 13 red laser", muzzle = "Flash 13 red laser", impact = "Hit 13 red laser",
+            projectileScale = 0.6f, muzzleScale = 0.6f, impactScale = 0.6f },
+
+        new Spec { file = "Weapon_NovaH", variantOf = "Weapon_Nova", side = 2.6f, hovl = true, name = "NOVA H", model = "Guns02/Cosmic_Retro_Blaster_11.fbx", icon = "Guns02/Icons_UI/SideView/SideView_Blaster_1_11.png",
+            color = new Color(0.75f, 0.45f, 1f), damage = 10f, splashRadius = 2.4f, splashDamage = 6f, range = 6f, magazine = 3, interval = 0.8f, reload = 2f,
+            speed = 13f, homing = 140f, radius = 0.3f, knock = 1f,
+            recoilAngle = 30f, recoilBack = 0.2f, recoilTime = 0.35f, shotShake = 0.1f, hitShake = 0.2f, killShake = 0.45f, flash = 7f, casings = false,
+            projectile = "Projectile 17 nova violet", muzzle = "Flash 17 nova violet", impact = "Hit 17 nova violet",
+            projectileScale = 0.9f, muzzleScale = 0.8f, impactScale = 0.9f, muzzleY = 0.2f },
     };
 
     [MenuItem("Tools/AutoMars/Weapon/Build Weapons (definitions, pickup prefabs, player, HUD tile)")]
@@ -116,6 +183,7 @@ public static class WeaponBuilder
         EditorUtility.SetDirty(tools);
 
         MobileUIBuilder.AddWeaponSlot();
+        MobileUIBuilder.AddToolBar();
         EditorSceneManager.MarkSceneDirty(tools.gameObject.scene);
         Debug.Log("Weapons built: " + defs.Length + " definitions in " + DefFolder + ", pickup prefabs in " + PrefabFolder + ", PlayerWeapon on " + tools.name + ".");
     }
@@ -131,15 +199,21 @@ public static class WeaponBuilder
         if (old != null) Object.DestroyImmediate(old);
         var parent = new GameObject("Weapon Pickups").transform;
         Vector3 origin = tools.transform.position;
-        int n = 0;
+        var rowOf = new System.Collections.Generic.Dictionary<string, int>();
+        int n = 0, rows = 0;
         foreach (var s in Specs)
         {
+            // a second take lies next to the weapon it is a take on, so the two can be compared
+            int row;
+            float side = 0f;
+            if (s.variantOf != null && rowOf.TryGetValue(s.variantOf, out row)) side = s.side;
+            else { row = rows++; rowOf[s.file] = row; }
             var def = AssetDatabase.LoadAssetAtPath<WeaponDef>(DefFolder + "/" + s.file + ".asset");
             if (def == null || def == pw.weapon) continue;
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabFolder + "/Pickup_" + s.file.Substring(7) + ".prefab");
             if (prefab == null) continue;
             var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent);
-            Vector3 p = origin + new Vector3(3.5f, 0f, 4f - n * 2.4f);
+            Vector3 p = origin + new Vector3(3.5f + side, 0f, 4f - (row - 1) * 2.4f);
             p.y = GroundUtil.Height(p, origin.y);
             go.transform.position = p;
             n++;
@@ -167,12 +241,20 @@ public static class WeaponBuilder
             d.shotShake = s.shotShake; d.hitShake = s.hitShake; d.killShake = s.killShake; d.flashLight = s.flash; d.casings = s.casings;
             d.projectileScale = s.projectileScale; d.muzzleScale = s.muzzleScale; d.impactScale = s.impactScale;
             d.modelScale = 1.4f;
+            d.mode = s.beam ? WeaponMode.Beam : WeaponMode.Projectile;
+            d.beamScale = s.beamScale; d.beamTick = s.beamTick; d.damageMax = s.damageMax; d.rampTime = s.rampTime;
+            d.tracerLength = s.tracerLength; d.rangeArc = s.rangeArc;
         }
         d.model = AssetDatabase.LoadAssetAtPath<GameObject>(Guns + s.model);
         d.icon = IconSprite(Guns + s.icon);
-        d.projectileFx = AssetDatabase.LoadAssetAtPath<GameObject>(Fx + s.projectile + ".prefab");
-        d.muzzleFx = AssetDatabase.LoadAssetAtPath<GameObject>(Fx + s.muzzle + ".prefab");
-        d.impactFx = AssetDatabase.LoadAssetAtPath<GameObject>(Fx + s.impact + ".prefab");
+        d.projectileFx = AssetDatabase.LoadAssetAtPath<GameObject>((s.hovl ? HovlProj + "Projectile VFX loop/" : Fx) + s.projectile + ".prefab");
+        d.muzzleFx = AssetDatabase.LoadAssetAtPath<GameObject>((s.hovl ? HovlProj + "Flash and hits/" : Fx) + s.muzzle + ".prefab");
+        d.impactFx = AssetDatabase.LoadAssetAtPath<GameObject>((s.hovl ? HovlProj + "Flash and hits/" : Fx) + s.impact + ".prefab");
+        if (s.beamFx != null)
+        {
+            d.beamFx = AssetDatabase.LoadAssetAtPath<GameObject>(Hovl + s.beamFx + ".prefab");
+            if (d.beamFx == null) Debug.LogWarning("Weapons: laser prefab not found: " + Hovl + s.beamFx);
+        }
         if (d.model == null) Debug.LogWarning("Weapons: model not found: " + Guns + s.model);
         if (d.projectileFx == null || d.muzzleFx == null || d.impactFx == null) Debug.LogWarning("Weapons: an effect prefab of " + s.name + " was not found (Epic Toon FX moved?)");
         if (fresh && d.model != null)

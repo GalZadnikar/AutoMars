@@ -1,0 +1,58 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 72a2383c281aa454dad8a05407e2934b, type: 3}
+  m_Name: Weapon_NovaH
+  m_EditorClassIdentifier: Assembly-CSharp::WeaponDef
+  displayName: NOVA H
+  icon: {fileID: 21300000, guid: a9c5bcc972b0c4286ae63b8fc4f03a9c, type: 3}
+  color: {r: 0.75, g: 0.45, b: 1, a: 1}
+  mode: 0
+  model: {fileID: 919132149155446097, guid: d950333b14501444087c2aa4c9e783aa, type: 3}
+  modelScale: 1.4
+  grip: {x: 0, y: 0.0651798, z: -0.0025831698}
+  muzzle: {x: 0, y: 0.2, z: 0.27568108}
+  damage: 10
+  range: 6
+  magazine: 3
+  fireInterval: 0.8
+  reloadTime: 2
+  pellets: 1
+  spread: 0
+  speed: 13
+  homing: 140
+  radius: 0.3
+  pierce: 0
+  splashRadius: 2.4
+  splashDamage: 6
+  knockback: 1
+  beamFx: {fileID: 0}
+  beamScale: 0.5
+  beamTick: 0.2
+  damageMax: 0
+  rampTime: 0
+  recoilAngle: 30
+  recoilBack: 0.2
+  recoilTime: 0.35
+  shotShake: 0.1
+  hitShake: 0.2
+  killShake: 0.45
+  flashLight: 7
+  casings: 0
+  projectileFx: {fileID: 851269529501799637, guid: 32d222d2f094ed04bb5d3624d2b5ca5c, type: 3}
+  projectileScale: 0.9
+  muzzleFx: {fileID: 1716391117806116, guid: 6c45d61ea68f82b4eb2c7f1ff7fdcb81, type: 3}
+  muzzleScale: 0.8
+  impactFx: {fileID: 1348390491135638, guid: d7d554880214e644bbbbfc89aa884b26, type: 3}
+  impactScale: 0.9
+  tracerLength: 0
+  tracerWidth: 0.14
+  rangeArc: 0

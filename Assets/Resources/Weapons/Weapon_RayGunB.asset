@@ -1,0 +1,58 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 72a2383c281aa454dad8a05407e2934b, type: 3}
+  m_Name: Weapon_RayGunB
+  m_EditorClassIdentifier: Assembly-CSharp::WeaponDef
+  displayName: RAY GUN B
+  icon: {fileID: 21300000, guid: ac43277ce7cf44ea9b9e7ff097b4cbfe, type: 3}
+  color: {r: 1, g: 0.3, b: 0.25, a: 1}
+  mode: 1
+  model: {fileID: 919132149155446097, guid: 85fc49c88532a4aa3b0b07b3c7975eb4, type: 3}
+  modelScale: 1.4
+  grip: {x: 0, y: 0.055970624, z: -0.0051752594}
+  muzzle: {x: 0, y: 0.15252595, z: 0.22684482}
+  damage: 1
+  range: 6
+  magazine: 30
+  fireInterval: 0.2
+  reloadTime: 1.6
+  pellets: 1
+  spread: 0
+  speed: 45
+  homing: 0
+  radius: 0.15
+  pierce: 0
+  splashRadius: 0
+  splashDamage: 0
+  knockback: 0.05
+  beamFx: {fileID: 1818483698145146, guid: 6028b5b4fbbf45e45a362de709aa2e18, type: 3}
+  beamScale: 0.9
+  beamTick: 0.2
+  damageMax: 4
+  rampTime: 2.4
+  recoilAngle: 5
+  recoilBack: 0.03
+  recoilTime: 0.12
+  shotShake: 0
+  hitShake: 0.03
+  killShake: 0.3
+  flashLight: 3
+  casings: 0
+  projectileFx: {fileID: 169190, guid: 5ebe806fbdc57ab4e834f4764618c29b, type: 3}
+  projectileScale: 0.8
+  muzzleFx: {fileID: 134162, guid: c49de3291c8b48841a7dbd15e3f74c2b, type: 3}
+  muzzleScale: 0.5
+  impactFx: {fileID: 134664, guid: 5b2df17ecc30d7b44909bcc7d4a4febd, type: 3}
+  impactScale: 0.5
+  tracerLength: 0
+  tracerWidth: 0.14
+  rangeArc: 1

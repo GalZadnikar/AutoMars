@@ -15,6 +15,7 @@ MonoBehaviour:
   displayName: NOVA
   icon: {fileID: 21300000, guid: a9c5bcc972b0c4286ae63b8fc4f03a9c, type: 3}
   color: {r: 0.4, g: 0.75, b: 1, a: 1}
+  mode: 0
   model: {fileID: 919132149155446097, guid: d950333b14501444087c2aa4c9e783aa, type: 3}
   modelScale: 1.4
   grip: {x: 0, y: 0.0651798, z: -0.0025831698}
@@ -33,6 +34,11 @@ MonoBehaviour:
   splashRadius: 2.4
   splashDamage: 6
   knockback: 1
+  beamFx: {fileID: 0}
+  beamScale: 0.5
+  beamTick: 0.2
+  damageMax: 4
+  rampTime: 2.4
   recoilAngle: 30
   recoilBack: 0.2
   recoilTime: 0.35
@@ -47,3 +53,6 @@ MonoBehaviour:
   muzzleScale: 0.8
   impactFx: {fileID: 111992, guid: ef697b4cb271b7642af97a1a70394631, type: 3}
   impactScale: 1
+  tracerLength: 0
+  tracerWidth: 0.14
+  rangeArc: 0

@@ -24,6 +24,7 @@ public class WeaponProjectile : MonoBehaviour
     int pierceLeft;
     bool dying;
     ParticleSystem[] systems;
+    TrailRenderer tracer;
     readonly List<Health> done = new List<Health>();
 
     public static WeaponProjectile Fire(WeaponDef def, PlayerWeapon owner, Vector3 from, Vector3 dir, Health target)
@@ -38,13 +39,15 @@ public class WeaponProjectile : MonoBehaviour
         p.start = from;
         p.velocity = dir * Mathf.Max(1f, def.speed);
         p.age = 0f;
-        p.life = (def.range + 1.5f) / Mathf.Max(1f, def.speed);
+        // a fan of piercing pellets ends at the weapon's range; other shots may fly a little past it
+        p.life = (def.range + (def.pierce > 0 && def.pellets > 1 ? 0.4f : 1.5f)) / Mathf.Max(1f, def.speed);
         p.pierceLeft = def.pierce;
         p.dying = false;
         p.done.Clear();
         p.transform.SetPositionAndRotation(from, Quaternion.LookRotation(dir));
         p.transform.localScale = Vector3.one * def.projectileScale;
         p.gameObject.SetActive(true);
+        p.SetTracer();
         for (int i = 0; i < p.systems.Length; i++)
         {
             p.systems[i].Clear(false);
@@ -207,10 +210,39 @@ public class WeaponProjectile : MonoBehaviour
         else CombatFX.Hit(p, -dir, def.color, size);
     }
 
+    /// The bright streak behind the shot (WeaponDef.tracerLength), so its line can be read at a glance.
+    void SetTracer()
+    {
+        if (def.tracerLength <= 0f)
+        {
+            if (tracer != null) tracer.emitting = false;
+            return;
+        }
+        if (tracer == null)
+        {
+            tracer = gameObject.AddComponent<TrailRenderer>();
+            tracer.sharedMaterial = Resources.Load<Material>("FX/ParticleSoft");
+            tracer.minVertexDistance = 0.05f;
+            tracer.numCapVertices = 2;
+            tracer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            tracer.receiveShadows = false;
+            tracer.widthCurve = new AnimationCurve(new Keyframe(0f, 1f), new Keyframe(1f, 0.1f));
+        }
+        tracer.time = def.tracerLength / Mathf.Max(1f, def.speed);
+        tracer.widthMultiplier = def.tracerWidth;
+        var g = new Gradient();
+        g.SetKeys(new[] { new GradientColorKey(Color.Lerp(def.color, Color.white, 0.75f), 0f), new GradientColorKey(def.color, 1f) },
+                  new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0f, 1f) });
+        tracer.colorGradient = g;
+        tracer.Clear();
+        tracer.emitting = true;
+    }
+
     void Die()
     {
         dying = true;
         dieT = 0.35f;
+        if (tracer != null) tracer.emitting = false;
         for (int i = 0; i < systems.Length; i++)
         {
             var ps = systems[i];

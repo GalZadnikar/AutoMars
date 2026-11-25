@@ -1,0 +1,58 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 72a2383c281aa454dad8a05407e2934b, type: 3}
+  m_Name: Weapon_RapidH
+  m_EditorClassIdentifier: Assembly-CSharp::WeaponDef
+  displayName: RAPID H
+  icon: {fileID: 21300000, guid: 86c17a388b6bb494d9d37dc718b9076f, type: 3}
+  color: {r: 0.4, g: 0.75, b: 1, a: 1}
+  mode: 0
+  model: {fileID: 919132149155446097, guid: 4f717decbbb9640c686a8b344599faa7, type: 3}
+  modelScale: 1.4
+  grip: {x: 0, y: -0.07310925, z: -0.065021954}
+  muzzle: {x: 0, y: 0.072736464, z: 0.24209075}
+  damage: 2
+  range: 5.5
+  magazine: 20
+  fireInterval: 0.085
+  reloadTime: 1.5
+  pellets: 1
+  spread: 7
+  speed: 34
+  homing: 60
+  radius: 0.15
+  pierce: 0
+  splashRadius: 0
+  splashDamage: 0
+  knockback: 0.1
+  beamFx: {fileID: 0}
+  beamScale: 0.5
+  beamTick: 0.2
+  damageMax: 0
+  rampTime: 0
+  recoilAngle: 9
+  recoilBack: 0.05
+  recoilTime: 0.08
+  shotShake: 0.025
+  hitShake: 0.04
+  killShake: 0.25
+  flashLight: 3
+  casings: 1
+  projectileFx: {fileID: 1924214270427649882, guid: 7d1b9b65cc11d07488dcbc088a19a9a4, type: 3}
+  projectileScale: 0.5
+  muzzleFx: {fileID: 1059172723860074, guid: 058c6c6f7bee2fc45a91fbdb528a9035, type: 3}
+  muzzleScale: 0.5
+  impactFx: {fileID: 1231636063597364, guid: 3aa0fab185f378240b831342bde74b26, type: 3}
+  impactScale: 0.5
+  tracerLength: 0
+  tracerWidth: 0.14
+  rangeArc: 0

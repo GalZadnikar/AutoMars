@@ -277,6 +277,19 @@ public class DebugMenu : MonoBehaviour
         Btn("KO PLAYER", g, () => { var ph = PlayerHealth.Instance; if (ph != null) ph.Health.Kill(); }, Danger);
         TMP_Text godLabel = null;
         godLabel = Btn("GOD MODE: " + (PlayerHealth.GodMode ? "ON" : "OFF"), g, () => { PlayerHealth.GodMode = !PlayerHealth.GodMode; godLabel.text = PlayerHealth.GodMode ? "GOD MODE: ON" : "GOD MODE: OFF"; }).GetComponentInChildren<TMP_Text>();
+
+        g = Section(p, "WEAPONS + HUD A/B");
+        TMP_Text hudLabel = null;
+        hudLabel = Btn(HudName(), g, () => { MobileHUD.SetBarLayout(!MobileHUD.SavedBarLayout); hudLabel.text = HudName(); }).GetComponentInChildren<TMP_Text>();
+        Btn("NEXT WEAPON", g, NextWeapon);
+        Btn("DROP ALL WEAPONS", g, DropAllWeapons);
+        TMP_Text shakeLabel = null;
+        shakeLabel = Btn("SHAKE x" + CameraShake.Scale, g, () =>
+        {
+            // 0 > 0.25 > 0.5 > 1 > 0
+            CameraShake.Scale = CameraShake.Scale >= 1f ? 0f : (CameraShake.Scale <= 0f ? 0.25f : CameraShake.Scale * 2f);
+            shakeLabel.text = "SHAKE x" + CameraShake.Scale;
+        }).GetComponentInChildren<TMP_Text>();
     }
 
 void BuildWorldTab(RectTransform p)
@@ -405,6 +418,34 @@ void BuildWorldTab(RectTransform p)
         d.SourcePrefab = src.gameObject;
         d.Init(go.transform.position, 900 + ScoutBot.All.Count);
         GameToast.Show("DRONE SPAWNED (NO BAY)", new Color(0.45f, 0.95f, 1f));
+    }
+
+    static string HudName() => MobileHUD.SavedBarLayout ? "HUD: B BAR + TAP" : "HUD: A SIDE + AUTO";
+
+    /// Puts the next weapon of Resources/Weapons into the selected weapon slot.
+    static void NextWeapon()
+    {
+        var pw = PlayerWeapon.Instance;
+        var all = WeaponDef.LoadAll();
+        if (pw == null || all.Length == 0) return;
+        var d = all[(Array.IndexOf(all, pw.weapon) + 1) % all.Length];
+        pw.Equip(d);
+        GameToast.Show(d.displayName, d.color);
+    }
+
+    /// A pickup of every weapon in a circle around the player.
+    static void DropAllWeapons()
+    {
+        var pt = PlayerT();
+        var all = WeaponDef.LoadAll();
+        if (pt == null) return;
+        for (int i = 0; i < all.Length; i++)
+        {
+            float a = i * Mathf.PI * 2f / all.Length;
+            Vector3 p = pt.position + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * 3.4f;
+            p.y = GroundUtil.Height(p, pt.position.y);
+            WeaponPickup.Spawn(all[i], p);
+        }
     }
 
     static void KillEnemies()

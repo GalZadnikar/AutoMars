@@ -15,6 +15,7 @@ MonoBehaviour:
   displayName: RAY GUN
   icon: {fileID: 21300000, guid: ac43277ce7cf44ea9b9e7ff097b4cbfe, type: 3}
   color: {r: 1, g: 0.3, b: 0.25, a: 1}
+  mode: 0
   model: {fileID: 919132149155446097, guid: 85fc49c88532a4aa3b0b07b3c7975eb4, type: 3}
   modelScale: 1.4
   grip: {x: 0, y: 0.055970624, z: -0.0051752594}
@@ -33,6 +34,11 @@ MonoBehaviour:
   splashRadius: 0
   splashDamage: 0
   knockback: 0.12
+  beamFx: {fileID: 0}
+  beamScale: 0.5
+  beamTick: 0.2
+  damageMax: 4
+  rampTime: 2.4
   recoilAngle: 8
   recoilBack: 0.04
   recoilTime: 0.1
@@ -47,3 +53,6 @@ MonoBehaviour:
   muzzleScale: 0.5
   impactFx: {fileID: 134664, guid: 5b2df17ecc30d7b44909bcc7d4a4febd, type: 3}
   impactScale: 0.5
+  tracerLength: 0
+  tracerWidth: 0.14
+  rangeArc: 0

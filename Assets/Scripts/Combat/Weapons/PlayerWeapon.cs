@@ -17,13 +17,17 @@ public class PlayerWeapon : MonoBehaviour
     /// Not 1 only while one of the weapon's hits deals its damage: enemies multiply their knockback with it,
     /// so a stream of small bullets doesn't pin them the way as many pickaxe blows would.
     public static float HitKnockScale { get; private set; } = 1f;
+    /// HUD layout B (bottom bar): the player has two weapon slots and a pickup fills the empty one first.
+    public static bool TwoSlots;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    static void ResetStatics() { Instance = null; HitKnockScale = 1f; }
+    static void ResetStatics() { Instance = null; HitKnockScale = 1f; TwoSlots = false; }
 
     [Header("Weapon")]
     [Tooltip("The weapon he has now (empty = none: the HUD tile is hidden). A pickup on the ground swaps it")]
     public WeaponDef weapon;
+    [Tooltip("The weapon in the second slot at the start (only used by the bottom-bar HUD layout). Empty = the slot is empty")]
+    public WeaponDef weapon2;
     [Tooltip("With no enemy in range for this long, a magazine that isn't full is reloaded (s)")]
     public float idleReloadDelay = 1.2f;
     [Tooltip("Off = he only shoots while standing (like the pickaxe). On = also while walking, at enemies in front of him")]
@@ -69,6 +73,10 @@ public class PlayerWeapon : MonoBehaviour
     /// The weapon is the tool in the player's hands (set by PlayerTools).
     public bool InHands { get; private set; }
     public Health Target => target;
+    /// Which of the two weapon slots is selected (0 or 1). `weapon` / `Ammo` are always that slot's.
+    public int Slot { get; private set; }
+    public WeaponDef SlotWeapon(int i) => i == Slot ? weapon : other;
+    public int SlotAmmo(int i) => i == Slot ? Ammo : otherAmmo;
 
     public event Action OnShot;
     /// true = that hit killed the target
@@ -78,6 +86,8 @@ public class PlayerWeapon : MonoBehaviour
     public event Action OnWeaponChanged;
 
     JoystickPlayerController pc;
+    WeaponDef other;     // the weapon in the slot that is not selected
+    int otherAmmo;
     Health target;
     Vector3 aimPoint;
     float aim, cooldown, reloadT, idleT, kick, ringPunch, flashT;
@@ -86,6 +96,15 @@ public class PlayerWeapon : MonoBehaviour
     ParticleSystem casingFx;
     LineRenderer ring;
     Light flash;
+    WeaponBeam beam;
+    Health beamTarget;
+    bool beamOn;
+    float heat, tickT, arcRange, arcWidth;
+    Transform arcRoot;
+    LineRenderer arcLine;
+    MeshRenderer arcFill;
+    Mesh arcMesh;
+    MaterialPropertyBlock arcBlock;
 
     void Awake()
     {
@@ -93,6 +112,8 @@ public class PlayerWeapon : MonoBehaviour
         FxPool.Sound = sound;
         pc = GetComponent<JoystickPlayerController>();
         if (weapon != null) Ammo = weapon.magazine;
+        other = weapon2;
+        otherAmmo = other != null ? other.magazine : 0;
         BuildModel();
     }
 
@@ -108,6 +129,9 @@ public class PlayerWeapon : MonoBehaviour
         aim = 0f;
         if (ring != null) ring.gameObject.SetActive(false);
         if (flash != null) flash.enabled = false;
+        beamOn = false;
+        if (beam != null) beam.Off();
+        if (arcRoot != null) arcRoot.gameObject.SetActive(false);
     }
 
     /// Called by PlayerTools: the weapon is / is not the tool in the hands.
@@ -116,6 +140,11 @@ public class PlayerWeapon : MonoBehaviour
         InHands = on;
         bool show = on && weapon != null;
         if (holder != null && holder.gameObject.activeSelf != show) holder.gameObject.SetActive(show);
+        if (!show)
+        {
+            beamOn = false;
+            if (beam != null) beam.Off();
+        }
     }
 
     /// Gives him this weapon with a full magazine. Returns the one he had (null = none).
@@ -130,6 +159,40 @@ public class PlayerWeapon : MonoBehaviour
         BuildModel();
         OnWeaponChanged?.Invoke();
         return old;
+    }
+
+    /// Switches to the other weapon slot (0 or 1). Each slot keeps its own ammo; a reload in progress is dropped.
+    public void SelectSlot(int i)
+    {
+        i = Mathf.Clamp(i, 0, 1);
+        if (i == Slot) return;
+        var w = weapon;
+        int a = Ammo;
+        weapon = other;
+        Ammo = otherAmmo;
+        other = w;
+        otherAmmo = a;
+        Slot = i;
+        Reloading = false;
+        cooldown = 0.2f;
+        kick = 0f;
+        BuildModel();
+        OnWeaponChanged?.Invoke();
+        if (weapon != null && Ammo <= 0) StartReload();
+    }
+
+    /// A weapon from a pickup. With two slots (HUD layout B) it goes into the empty slot if there is one;
+    /// otherwise it replaces the selected slot. Returns the weapon that was replaced (null = nothing to drop).
+    public WeaponDef Give(WeaponDef def)
+    {
+        if (TwoSlots && def != null && weapon != null && other == null)
+        {
+            other = def;
+            otherAmmo = def.magazine;
+            OnWeaponChanged?.Invoke();
+            return null;
+        }
+        return Equip(def);
     }
 
     /// Reload by hand (tap on the HUD tile). Does nothing with a full magazine.
@@ -158,6 +221,11 @@ public class PlayerWeapon : MonoBehaviour
         if (holder != null) Destroy(holder.gameObject);
         holder = null;
         muzzle = null;
+        if (beam != null) Destroy(beam.gameObject);
+        beam = null;
+        beamOn = false;
+        beamTarget = null;
+        heat = 0f;
         if (weapon == null || weapon.model == null) return;
 
         holder = new GameObject("Weapon (" + weapon.displayName + ")").transform;
@@ -176,6 +244,7 @@ public class PlayerWeapon : MonoBehaviour
         holder.position = hand != null ? hand.position : arm.position;
         holder.SetParent(arm, true);   // the arm bones are scaled; this keeps the gun's world size
         holder.gameObject.SetActive(InHands);
+        if (weapon.mode == WeaponMode.Beam && weapon.beamFx != null) beam = WeaponBeam.Create(weapon.beamFx, weapon.beamScale);
     }
 
     void Update()
@@ -214,7 +283,11 @@ public class PlayerWeapon : MonoBehaviour
 
         bool aiming = target != null && (!moving || fireWhileMoving);
         aim = Mathf.MoveTowards(aim, aiming ? 1f : 0f, aimTime > 0f ? dt / aimTime : 1f);
-        if (target == null) return;
+        if (target == null)
+        {
+            if (weapon.mode == WeaponMode.Beam) BeamStep(false, dt);
+            return;
+        }
         aimPoint = target.AimPoint;
 
         Vector3 to = target.transform.position - transform.position; to.y = 0f;
@@ -226,9 +299,50 @@ public class PlayerWeapon : MonoBehaviour
             angle = Quaternion.Angle(transform.rotation, look);
         }
 
-        if (!aiming || Reloading || Ammo <= 0 || cooldown > 0f || aim < 0.95f) return;
-        if (angle > (moving ? moveFireArc * 0.5f : faceAngle)) return;
-        Fire();
+        bool ready = aiming && !Reloading && Ammo > 0 && aim >= 0.95f && angle <= (moving ? moveFireArc * 0.5f : faceAngle);
+        if (weapon.mode == WeaponMode.Beam) BeamStep(ready, dt);
+        else if (ready && cooldown <= 0f) Fire();
+    }
+
+    /// Beam weapons: while `on`, the beam stays on the target; every Beam Tick it uses one round and deals a hit.
+    /// The damage climbs from Damage to Damage Max over Ramp Time on the same enemy and starts over on a new one.
+    void BeamStep(bool on, float dt)
+    {
+        var def = weapon;
+        if (!on)
+        {
+            beamOn = false;
+            if (beam != null) beam.Off();
+            heat = Mathf.MoveTowards(heat, 0f, dt / 0.6f);   // a short break (a step, a reload) keeps part of the ramp
+            return;
+        }
+        if (target != beamTarget)
+        {
+            beamTarget = target;
+            heat = 0f;
+            tickT = 0f;
+        }
+        beamOn = true;
+        heat = Mathf.MoveTowards(heat, 1f, def.rampTime > 0f ? dt / def.rampTime : 1f);
+        tickT += dt;
+        float tick = Mathf.Max(0.05f, def.beamTick);
+        while (tickT >= tick && Ammo > 0 && target != null && !target.IsDead)
+        {
+            tickT -= tick;
+            Ammo--;
+            kick = 1f;
+            Vector3 from = muzzle != null ? muzzle.position : transform.position + Vector3.up * 1.3f;
+            Vector3 dir = aimPoint - from;
+            float dmg = Mathf.Round(Mathf.Lerp(def.damage, Mathf.Max(def.damage, def.damageMax), heat));
+            DealHit(def, target, dmg, aimPoint, dir.sqrMagnitude > 0.0001f ? dir.normalized : transform.forward, from, def.knockback);
+            OnShot?.Invoke();
+        }
+        if (Ammo <= 0 && !Reloading)
+        {
+            StartReload();
+            beamOn = false;
+            if (beam != null) beam.Off();
+        }
     }
 
     Health FindTarget()
@@ -339,6 +453,7 @@ public class PlayerWeapon : MonoBehaviour
     void LateUpdate()
     {
         UpdateRing();
+        UpdateArc();
         if (holder == null || !holder.gameObject.activeInHierarchy) return;
 
         float k = kick * kick;
@@ -365,6 +480,25 @@ public class PlayerWeapon : MonoBehaviour
         }
         holder.rotation = rot;
         holder.position = (hand != null ? hand.position : arm.position) - barrel * (weapon.recoilBack * k);
+
+        // the beam runs from where the muzzle is now (after the pose) to the enemy; it and its light grow with the ramp
+        if (beam != null)
+        {
+            if (beamOn && muzzle != null && target != null)
+            {
+                beam.Set(muzzle.position, aimPoint, heat);
+                if (weapon.flashLight > 0f)
+                {
+                    EnsureFx();
+                    flash.color = Color.Lerp(weapon.color, Color.white, 0.3f);
+                    flash.transform.position = muzzle.position + Vector3.up * 0.2f;
+                    flash.intensity = weapon.flashLight * (0.4f + 0.6f * heat);
+                    flash.enabled = true;
+                    flashT = 0.07f;
+                }
+            }
+            else beam.Off();
+        }
     }
 
     /// Turns a bone so its Y axis (which runs along the arm) points at the point.
@@ -395,6 +529,88 @@ public class PlayerWeapon : MonoBehaviour
         Color c = Color.Lerp(new Color(1f, 0.35f, 0.25f), Color.white, ringPunch);
         c.a = Reloading ? 0.35f : 0.9f;
         ring.startColor = ring.endColor = c;
+    }
+
+    /// A faint fan on the ground toward the enemy he shoots at: as long as the weapon's range, as wide as its spread.
+    void UpdateArc()
+    {
+        bool show = weapon != null && weapon.rangeArc && target != null && InHands && aim > 0f;
+        if (!show)
+        {
+            if (arcRoot != null && arcRoot.gameObject.activeSelf) arcRoot.gameObject.SetActive(false);
+            return;
+        }
+        EnsureFx();
+        float width = Mathf.Clamp(weapon.mode == WeaponMode.Beam ? 14f : Mathf.Max(weapon.spread, 24f), 10f, 180f);
+        if (arcRoot == null || !Mathf.Approximately(arcRange, weapon.range) || !Mathf.Approximately(arcWidth, width)) BuildArc(weapon.range, width);
+        if (!arcRoot.gameObject.activeSelf) arcRoot.gameObject.SetActive(true);
+        Vector3 to = target.transform.position - transform.position; to.y = 0f;
+        arcRoot.position = transform.position + Vector3.up * 0.07f;
+        if (to.sqrMagnitude > 0.0001f) arcRoot.rotation = Quaternion.LookRotation(to);
+        Color c = weapon.color;
+        c.a = 0.45f * aim;
+        arcLine.startColor = arcLine.endColor = c;
+        c.a = 0.12f * aim;
+        arcBlock.SetColor("_BaseColor", c);
+        arcFill.SetPropertyBlock(arcBlock);
+    }
+
+    void BuildArc(float range, float width)
+    {
+        arcRange = range;
+        arcWidth = width;
+        if (arcRoot == null)
+        {
+            arcRoot = new GameObject("Range Arc").transform;
+            arcRoot.SetParent(fxRoot, false);
+            var lgo = new GameObject("Line");
+            lgo.transform.SetParent(arcRoot, false);
+            lgo.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            arcLine = lgo.AddComponent<LineRenderer>();
+            arcLine.sharedMaterial = Resources.Load<Material>("FX/ParticleSoft");
+            arcLine.useWorldSpace = false;
+            arcLine.loop = true;
+            arcLine.alignment = LineAlignment.TransformZ;
+            arcLine.widthMultiplier = 0.09f;
+            arcLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            arcLine.receiveShadows = false;
+            var fgo = new GameObject("Fill");
+            fgo.transform.SetParent(arcRoot, false);
+            arcMesh = new Mesh();
+            fgo.AddComponent<MeshFilter>().sharedMesh = arcMesh;
+            arcFill = fgo.AddComponent<MeshRenderer>();
+            arcFill.sharedMaterial = Resources.Load<Material>("FX/ParticleSoft");
+            arcFill.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            arcFill.receiveShadows = false;
+            arcBlock = new MaterialPropertyBlock();
+        }
+        const int N = 24;
+        var pts = new Vector3[N + 2];
+        var verts = new Vector3[N + 2];
+        var uv = new Vector2[N + 2];
+        var mid = new Vector2(0.5f, 0.5f);
+        uv[0] = mid;
+        for (int i = 0; i <= N; i++)
+        {
+            float a = Mathf.Deg2Rad * Mathf.Lerp(-width * 0.5f, width * 0.5f, i / (float)N);
+            float x = Mathf.Sin(a) * range, z = Mathf.Cos(a) * range;
+            pts[i + 1] = new Vector3(x, z, 0f);      // the line object is turned flat, so its Y is forward
+            verts[i + 1] = new Vector3(x, 0f, z);
+            uv[i + 1] = mid;
+        }
+        arcLine.positionCount = N + 2;
+        arcLine.SetPositions(pts);
+        var tris = new int[N * 6];
+        for (int i = 0; i < N; i++)
+        {
+            tris[i * 6] = 0; tris[i * 6 + 1] = i + 1; tris[i * 6 + 2] = i + 2;
+            tris[i * 6 + 3] = 0; tris[i * 6 + 4] = i + 2; tris[i * 6 + 5] = i + 1;   // both sides
+        }
+        arcMesh.Clear();
+        arcMesh.vertices = verts;
+        arcMesh.uv = uv;
+        arcMesh.triangles = tris;
+        arcMesh.RecalculateBounds();
     }
 
     void EnsureFx()

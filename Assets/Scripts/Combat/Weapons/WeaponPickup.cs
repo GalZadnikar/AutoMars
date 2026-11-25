@@ -198,7 +198,7 @@ public class WeaponPickup : MonoBehaviour
     void Take(PlayerWeapon pw)
     {
         var mine = weapon;
-        var old = pw.Equip(mine);
+        var old = pw.Give(mine);
         GameToast.Show("+ " + mine.displayName, Color.Lerp(mine.color, Color.white, 0.3f));
         if (pw.pickupTakeFx != null) FxPool.Play(pw.pickupTakeFx, pw.transform.position + Vector3.up * 0.1f, Quaternion.identity, pw.pickupFxScale, 2f);
         CameraShake.Kick(0.06f);
